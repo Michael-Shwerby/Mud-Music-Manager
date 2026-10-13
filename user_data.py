@@ -33,7 +33,8 @@ folder on import.
 
 Import REPLACES the data on this computer (no merge). Before anything is
 written, the current data is exported to backups/"Before import ….zip"
-(SAFETY_DIR), so an import can always be undone by importing that file.
+(SAFETY_DIR, in the data folder since v0.18.0), so an import can always be
+undone by importing that file.
 The Music folder stays this computer's one if it has one; otherwise the
 backup's is used if that folder exists here; otherwise none is set (the
 user picks it on the Main Menu). Playlists linked with Connect Existing
@@ -56,6 +57,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
 
+import app_paths
 import config_manager
 import exceptions_manager
 import logger
@@ -66,8 +68,8 @@ FORMAT = "mud-music-manager-backup"
 FORMAT_VERSION = 1
 FILE_EXTENSION = ".zip"
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SAFETY_DIR = os.path.join(_BASE_DIR, "backups")
+# v0.18.0: in the user's data folder (app_paths.DATA_DIR), not the app folder.
+SAFETY_DIR = app_paths.data_path("backups")
 
 MANIFEST_NAME = "manifest.json"
 PLAYLISTS_NAME = "playlists.json"

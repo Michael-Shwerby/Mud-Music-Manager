@@ -57,10 +57,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
+import app_paths
 import logger
 
 FAILURES_FILENAME = "track_failures.json"
-FAILURES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), FAILURES_FILENAME)
+# v0.18.0: in the user's data folder (app_paths.DATA_DIR), not the app folder.
+FAILURES_PATH = app_paths.data_path(FAILURES_FILENAME)
 
 # A track is shown as "Unavailable" after failing on this many syncs
 # (Michael, 2026-10-07). "No match" doesn't wait for this.

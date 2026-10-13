@@ -41,6 +41,9 @@ v0.17.8: Your data (Checklist item 59), under Keyboard: Export… saves the
 playlists, exceptions, settings and pictures to one backup file; Import…
 checks a backup, confirms (ui_dialogs.ImportDataDialog) and replaces this
 computer's data with it (user_data.py; the old data is saved first).
+v0.18.1: under them, the Data folder line shows where the app keeps the
+user's data (app_paths.DATA_DIR, v0.18.0), full path in its tooltip.
+v0.18.2: that path can be selected and copied (drag, or right-click → Copy).
 
 v0.17.1: About (Checklist item 52), the last panel: the logo, name,
 version, copyright and trademark lines, the platform disclaimer, and
@@ -51,9 +54,12 @@ import os
 
 from PySide6.QtCore import QPoint, QStandardPaths, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QMenu, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog, QHBoxLayout, QLabel, QMenu, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+)
 
 import app_info
+import app_paths
 import config_manager
 import download_settings
 import ui_debug
@@ -165,12 +171,8 @@ class SettingsPage(QWidget):
             "Press Tab anywhere to see the current keys.",
             self._make_remap_control()))
 
-        # ---- Your data: export / import (v0.17.8, Checklist item 59)
-        col.addWidget(self._row_panel(
-            "Your data", "Save your playlists, albums, artists, exceptions, settings and playlist pictures to "
-            "one backup file, to set up Mud Music Manager on another computer (or after reinstalling) with "
-            "Import. Your music files aren't included: Sync downloads them again.",
-            self._make_data_control()))
+        # ---- Your data: export / import (v0.17.8, Checklist item 59), data folder (v0.18.1)
+        col.addWidget(self._make_data_panel())
 
         # ---- Music folder
         folder = make_panel()
@@ -552,6 +554,52 @@ class SettingsPage(QWidget):
         return self.remap_btn
 
     # ---- Your data (v0.17.8) ------------------------------------------------
+    def _make_data_panel(self) -> QWidget:
+        """Export / Import (v0.17.8) on top; under them (v0.18.1) the folder the
+        app keeps the user's data in (app_paths.DATA_DIR)."""
+        p = make_panel()
+        outer = QVBoxLayout(p)
+        outer.setContentsMargins(22, 18, 22, 18)
+        outer.setSpacing(14)
+        top = QHBoxLayout()
+        top.setSpacing(18)
+        c = QVBoxLayout()
+        c.setSpacing(2)
+        c.addWidget(CapsLabel("Your data", muted=True))
+        d = QLabel("Save your playlists, albums, artists, exceptions, settings and playlist pictures to "
+                   "one backup file, to set up Mud Music Manager on another computer (or after reinstalling) "
+                   "with Import. Your music files aren't included: Sync downloads them again.")
+        d.setProperty("role", "muted")
+        d.setWordWrap(True)
+        c.addWidget(d)
+        top.addLayout(c, 1)
+        top.addWidget(self._make_data_control(), 0, Qt.AlignVCenter)
+        outer.addLayout(top)
+
+        f = QVBoxLayout()
+        f.setSpacing(2)
+        f.addWidget(CapsLabel("Data folder", muted=True))
+        # v0.18.2: a plain selectable label (ElidedLabel paints its own text, so
+        # it can't be selected): drag to select, or right-click → Select All / Copy.
+        self.data_dir_label = QLabel(app_paths.DATA_DIR)
+        self.data_dir_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+        self.data_dir_label.setCursor(Qt.IBeamCursor)
+        # A long path is cut off at the panel's edge rather than widening Settings;
+        # Select All + Copy still copies all of it.
+        self.data_dir_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.data_dir_label.setMinimumWidth(1)
+        self.data_dir_label.setToolTip(f"{app_paths.DATA_DIR}\n(select it, or right-click → Copy)")
+        f.addWidget(self.data_dir_label)
+        where = ("Kept in the program's own folder (portable.txt is next to the program)."
+                 if app_paths.is_portable() else
+                 "Where the app keeps your playlists, exceptions, settings, pictures, logs and backups.")
+        hint = QLabel(where)
+        hint.setProperty("role", "faint")
+        hint.setWordWrap(True)
+        f.addWidget(hint)
+        outer.addLayout(f)
+        return p
+
     def _make_data_control(self):
         box = QWidget()
         row = QHBoxLayout(box)

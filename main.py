@@ -36,6 +36,15 @@ if __name__ == "__main__" and "--cli" not in sys.argv[1:]:
         sys.exit(0)
     debug_console.install_early_excepthook()
 
+# v0.18.0: the user's data lives in its own folder (app_paths.DATA_DIR,
+# %APPDATA%\Mud Music Manager on Windows). This must run before the modules
+# below are imported, since they work out their file paths when imported:
+# it moves data left in the app folder by an earlier version, or falls back
+# to the app folder for this session if the data folder can't be used.
+import app_paths
+
+_DATA_DIR_NOTE = app_paths.prepare_data_dir() if __name__ == "__main__" else None
+
 from datetime import datetime
 from pathlib import Path
 
@@ -57,7 +66,10 @@ import ui_settings
 import user_data
 import youtube_cookies
 
-VERSION = "0.17.9"
+VERSION = app_info.VERSION  # v0.18.0: the one version number lives in app_info.py
+
+if _DATA_DIR_NOTE:
+    logger.log_event(_DATA_DIR_NOTE)
 
 # Enables ANSI color codes to render correctly on plain Windows
 # cmd.exe, not just Windows Terminal/PowerShell (which already support
@@ -1201,7 +1213,7 @@ def handle_set_library_path(config):
 
     if move_files and config_manager.get_library_path(config) != resolved:
         print(
-            "\nOne or more playlist folders failed to move -- see logs/error_log.txt for the "
+            f"\nOne or more playlist folders failed to move -- see {logger.ERROR_LOG_PATH} for the "
             "specific reason(s). The library folder path has deliberately NOT been changed "
             "yet, so nothing is left half-moved: your files are still safely at the old "
             "location. Run 'Change Music Folder Path' again to retry."

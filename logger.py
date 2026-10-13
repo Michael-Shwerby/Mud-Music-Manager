@@ -2,15 +2,17 @@
 Mud Music Manager (SpotDL) - Logger
 
 Writes errors and session events to log files instead of letting them
-disappear from the terminal once it's closed.
+disappear from the terminal once it's closed. Since v0.18.0 the logs folder
+is in the user's data folder (app_paths.DATA_DIR), not the app folder.
 """
 
 import os
 from datetime import datetime
 
+import app_paths
 import debug_console
 
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+LOG_DIR = app_paths.data_path("logs")
 ERROR_LOG_PATH = os.path.join(LOG_DIR, "error_log.txt")
 EVENT_LOG_PATH = os.path.join(LOG_DIR, "session_log.txt")
 

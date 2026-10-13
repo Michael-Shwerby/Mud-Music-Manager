@@ -2,6 +2,17 @@
 
 What changed in each version, newest first.
 
+## v0.18.2 (2026-10-12)
+- The data folder path in Settings can be selected and copied (right-click → Copy).
+
+## v0.18.1 (2026-10-12)
+- Settings → Your data now shows where your data folder is.
+
+## v0.18.0 (2026-10-12)
+- **Your data now has its own folder:** `%APPDATA%\Mud Music Manager` on Windows. This covers your playlists, exceptions, settings, pictures, logs and backups. This prepares the app for an installer and automatic updates, which can then replace the program without touching your data.
+- The first time v0.18.0 starts, your existing data is copied there automatically. The old files are left where they were, with a note explaining the move; you can delete them once everything looks right. Your music files don't move.
+- For a portable setup, put an empty `portable.txt` file next to the program to keep everything in the program's own folder.
+
 ## v0.17.9 (2026-10-12)
 - **Export / Import in the terminal menu.** Settings → `export` / `import` work the same way as in the app. Import is unavailable in a terminal menu opened from the app's CMD button, because the running app would overwrite the imported settings. Close the app and run `python main.py --cli` instead.
 

@@ -16,11 +16,21 @@ Brand images (Checklist item 52), all in assets/:
     button.
   - app_icon.ico: the same emblem pre-rendered at 16-256 px, for Windows
     shortcuts and any future .exe build.
+
+v0.18.0: VERSION lives here (was main.py's), so there is one version
+number for the whole app; main.VERSION is kept as the same value. The
+shipped files (assets, licence texts) are found through
+app_paths.RESOURCE_DIR, which is also right in a packaged build.
 """
 
 import os
 
+import app_paths
+
 APP_NAME = "Mud Music Manager"
+# The one version number (MAJOR.MINOR.PATCH). It must match the GitHub
+# release tag (v0.18.0) and the version in the three project documents.
+VERSION = "0.18.2"
 OWNER = "Michael Xuereb"
 COPYRIGHT_YEAR = "2026"
 # v0.17.5 (Checklist item 56): open source under GPL-3.0-or-later (was "All rights reserved").
@@ -40,7 +50,7 @@ PLATFORM_DISCLAIMER = (
 # future pinned shortcut that carries the same ID keeps matching.
 WINDOWS_APP_ID = "MichaelXuereb.MudMusicManager"
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = app_paths.RESOURCE_DIR
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 LOGO_DARK_PATH = os.path.join(ASSETS_DIR, "logo_dark.png")
 LOGO_LIGHT_PATH = os.path.join(ASSETS_DIR, "logo_light.png")

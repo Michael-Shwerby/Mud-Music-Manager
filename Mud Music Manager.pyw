@@ -28,8 +28,13 @@ except BaseException as _e:  # nothing would be visible without a console
     try:
         import traceback
         _text = traceback.format_exc()
-        os.makedirs(os.path.join(_HERE, "logs"), exist_ok=True)
-        with open(os.path.join(_HERE, "logs", "error_log.txt"), "a", encoding="utf-8") as _f:
+        try:  # v0.18.0: the logs folder is in the user's data folder
+            import app_paths
+            _logs = app_paths.data_path("logs")
+        except Exception:
+            _logs = os.path.join(_HERE, "logs")
+        os.makedirs(_logs, exist_ok=True)
+        with open(os.path.join(_logs, "error_log.txt"), "a", encoding="utf-8") as _f:
             _f.write(f"Launcher: uncaught exception:\n{_text}\n")
         if os.name == "nt":
             import ctypes

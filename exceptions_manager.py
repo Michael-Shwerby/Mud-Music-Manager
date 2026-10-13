@@ -27,11 +27,13 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+import app_paths
 import logger
 import track_failures
 
 EXCEPTIONS_FILENAME = "exceptions.json"
-EXCEPTIONS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), EXCEPTIONS_FILENAME)
+# v0.18.0: in the user's data folder (app_paths.DATA_DIR), not the app folder.
+EXCEPTIONS_PATH = app_paths.data_path(EXCEPTIONS_FILENAME)
 
 _YOUTUBE_ID_PATTERN = re.compile(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})")
 

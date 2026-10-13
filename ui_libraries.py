@@ -21,7 +21,9 @@ from importlib import metadata
 from pathlib import Path
 from typing import List, Optional
 
-REQUIREMENTS_PATH = Path(os.path.dirname(os.path.abspath(__file__))) / "requirements.txt"
+import app_paths
+
+REQUIREMENTS_PATH = Path(app_paths.resource_path("requirements.txt"))  # v0.18.0: shipped-file folder
 
 # Used only if requirements.txt itself can't be read for some reason.
 _FALLBACK_NAMES = [

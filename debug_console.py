@@ -351,7 +351,8 @@ def install_early_excepthook() -> None:
             import traceback
             from datetime import datetime
             text = "".join(traceback.format_exception(exc_type, exc, tb)).strip()
-            log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+            import app_paths  # v0.18.0: the logs folder is in the user's data folder
+            log_dir = app_paths.data_path("logs")
             os.makedirs(log_dir, exist_ok=True)
             with open(os.path.join(log_dir, "error_log.txt"), "a", encoding="utf-8") as f:
                 f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] ERROR: Uncaught exception (startup):\n{text}\n")

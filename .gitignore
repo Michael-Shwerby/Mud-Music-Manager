@@ -36,6 +36,11 @@ test_2.py
 Test_Exceptions_A.py
 Test_Exceptions_B.py
 
+# Left beside old data files when v0.18.0 moves the data to the data folder,
+# and the marker that makes a build keep its data in its own folder
+Your data has moved.txt
+portable.txt
+
 # Python
 __pycache__/
 *.py[cod]

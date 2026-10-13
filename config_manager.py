@@ -168,10 +168,12 @@ import re
 import shutil
 from pathlib import Path
 
+import app_paths
 import logger
 
 CONFIG_FILENAME = "playlists.json"
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), CONFIG_FILENAME)
+# v0.18.0: in the user's data folder (app_paths.DATA_DIR), not the app folder.
+CONFIG_PATH = app_paths.data_path(CONFIG_FILENAME)
 
 # Suffix used for the temporary copy a Library-folder move
 # (change_library_path()) stages a playlist folder's contents into

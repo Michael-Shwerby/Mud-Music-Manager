@@ -68,6 +68,9 @@ Changing a playlist's link (v0.16.12) changes its key, so
 playlist_source_changed() moves the icon to the new key and drops the
 old playlist's cached numbers.
 
+Since v0.18.0 ui_settings.json and playlist_icons/ are in the user's data
+folder (app_paths.DATA_DIR), like the other data files.
+
 Writes are atomic (temp file + os.replace), same pattern as the config
 files (see config_manager._atomic_write_json()). These are only UI
 preferences, so an unreadable settings file is set aside as
@@ -81,12 +84,13 @@ import threading
 import time
 from typing import Any, Optional
 
+import app_paths
 import logger
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# v0.18.0: both in the user's data folder (app_paths.DATA_DIR), not the app folder.
 SETTINGS_FILENAME = "ui_settings.json"
-SETTINGS_PATH = os.path.join(_BASE_DIR, SETTINGS_FILENAME)
-ICONS_DIR = os.path.join(_BASE_DIR, "playlist_icons")
+SETTINGS_PATH = app_paths.data_path(SETTINGS_FILENAME)
+ICONS_DIR = app_paths.data_path("playlist_icons")
 
 THEME_DARK = "dark"
 THEME_LIGHT = "light"
