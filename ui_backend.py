@@ -51,6 +51,7 @@ from PySide6.QtGui import QImage
 
 import acquisition_engine
 import app_update
+import component_updates
 import config_manager
 import debug_console
 import dependency_checker
@@ -1220,6 +1221,15 @@ def check_updates_task() -> Callable:
     {"libraries": [PackageStatus], "app": AppUpdateStatus}."""
     def fn(thread: TaskThread):
         return {"libraries": dependency_checker.check_all(), "app": app_update.check_latest()}
+    return fn
+
+
+def component_update_task(force: bool) -> Callable:
+    """v0.22.0 (Checklist item 60g): look for newer yt-dlp / yt-dlp-ejs / Deno /
+    FFmpeg, download, check and test them (component_updates.check_and_stage);
+    returns its lines (empty when there was nothing to do)."""
+    def fn(thread: TaskThread):
+        return component_updates.check_and_stage(force=force, on_log=thread.progress.emit)
     return fn
 
 

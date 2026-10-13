@@ -2,6 +2,21 @@
 
 What changed in each version, newest first.
 
+## v0.22.3 (2026-10-13)
+- Settings → Project libraries also lists Deno and FFmpeg, with their versions and folders.
+
+## v0.22.2 (2026-10-13)
+- Running from source: Settings now shows Deno and FFmpeg, and the app keeps them up to date (yt-dlp is updated through Check For Updates, as before).
+
+## v0.22.1 (2026-10-13)
+- Fixed: the right side of Settings was cut off, hiding part of some settings and the component versions.
+
+## v0.22.0 (2026-10-13)
+- **yt-dlp, Deno and FFmpeg stay up to date on their own** in the installed and portable app, between app releases. Newer versions are downloaded from their official sources, checked, and tested with a real download before they're used (from the next launch). If a new version doesn't pass, the current one stays in use.
+- Settings → Updates shows each component's version, with **Use built-in versions** to go back.
+- Every release now bundles the newest FFmpeg and Deno (this one: FFmpeg 9.0.2, Deno 2.9.7).
+- An installation "for all users" can be updated too (Windows asks for administrator permission).
+
 ## v0.21.0 (2026-10-13)
 - **One-click updates:** when a new version is out, Check For Updates → **Update now** downloads it, checks that it's the genuine file, installs it and reopens the app. (Installed app only; the portable version links to the download page.)
 

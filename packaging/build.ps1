@@ -8,9 +8,11 @@ Builds the packaged Mud Music Manager (v0.19.1, Checklist item 60c).
    Python installation is not changed.
 2. Runs PyInstaller with packaging\mud_music_manager.spec, producing
    dist\Mud Music Manager\ (both programs plus _internal\).
-3. Copies FFmpeg (ffmpeg.exe, ffprobe.exe) and Deno (deno.exe) into its
-   tools\ folder. By default the copies found on this computer's PATH are
-   used; -FfmpegDir / -DenoExe name others.
+3. Puts FFmpeg (ffmpeg.exe, ffprobe.exe) and Deno (deno.exe) in its tools\
+   folder. By default (v0.22.0) the NEWEST official builds are downloaded
+   (gyan.dev FFmpeg essentials, Deno's GitHub release), each checked against
+   its published SHA-256. -UseLocalTools copies this computer's instead
+   (-FfmpegDir / -DenoExe name others). Writes _internal\bundled_versions.json.
    Their licence texts go beside them (FFMPEG_LICENSE.txt, FFMPEG_README.txt
    from the FFmpeg build's folder; DENO_LICENSE.txt from packaging\licenses).
 4. Runs the build's self-test (Mud Music Manager CLI.exe --selftest).
@@ -31,6 +33,7 @@ param(
     [string]$DenoExe = "",
     [string]$BuildRoot = "",
     [string]$Iscc = "",
+    [switch]$UseLocalTools,
     [switch]$Clean,
     [switch]$SkipSelfTest,
     [switch]$NoDownload,
@@ -62,34 +65,55 @@ Write-Host "Building with PyInstaller ..."
 & $Py -m PyInstaller --noconfirm --clean --distpath $Dist --workpath $Work (Join-Path $PSScriptRoot "mud_music_manager.spec")
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 
-Write-Host "Copying FFmpeg and Deno into tools\ ..."
 $Tools = Join-Path $App "tools"
 New-Item -ItemType Directory -Force $Tools | Out-Null
-if (-not $FfmpegDir) {
-    $f = Get-Command ffmpeg -ErrorAction SilentlyContinue
-    if (-not $f) { throw "FFmpeg not found on PATH; pass -FfmpegDir <folder holding ffmpeg.exe>" }
-    $FfmpegDir = Split-Path $f.Source -Parent
+if (-not ($UseLocalTools -or $FfmpegDir -or $DenoExe)) {
+    # v0.22.0 (Checklist item 60g): the newest official FFmpeg (gyan.dev essentials)
+    # and Deno, each checked against its published SHA-256 - the same code the app
+    # uses to update them between releases (component_updates.py).
+    Write-Host "Downloading the newest FFmpeg and Deno (checked against their published fingerprints) ..."
+    $savedData = $env:MMM_DATA_DIR
+    $env:MMM_DATA_DIR = Join-Path $BuildRoot "build\helper-data"   # the helper's log, not your data folder
+    & $Py -c "import sys; sys.path.insert(0, r'$Project'); import component_updates as c; print(c.download_latest_tools(r'$Tools'))"
+    $code = $LASTEXITCODE
+    $env:MMM_DATA_DIR = $savedData
+    if ($code -ne 0) { throw "Downloading FFmpeg / Deno failed (use -UseLocalTools to copy this PC's instead)" }
+} else {
+    Write-Host "Copying this PC's FFmpeg and Deno into tools\ ..."
+    if (-not $FfmpegDir) {
+        $f = Get-Command ffmpeg -ErrorAction SilentlyContinue
+        if (-not $f) { throw "FFmpeg not found on PATH; pass -FfmpegDir <folder holding ffmpeg.exe>" }
+        $FfmpegDir = Split-Path $f.Source -Parent
+    }
+    foreach ($exe in "ffmpeg.exe", "ffprobe.exe") {
+        $src = Join-Path $FfmpegDir $exe
+        if (-not (Test-Path $src)) { throw "$exe not found in $FfmpegDir" }
+        Copy-Item $src $Tools -Force
+    }
+    if (-not $DenoExe) {
+        $d = Get-Command deno -ErrorAction SilentlyContinue
+        if (-not $d) { throw "Deno not found on PATH; pass -DenoExe <path to deno.exe>" }
+        $DenoExe = $d.Source
+    }
+    Copy-Item $DenoExe (Join-Path $Tools "deno.exe") -Force
+    $FfmpegRoot = Split-Path $FfmpegDir -Parent   # the gyan.dev build: bin\ beside LICENSE and README.txt
+    foreach ($pair in @(@("LICENSE", "FFMPEG_LICENSE.txt"), @("README.txt", "FFMPEG_README.txt"))) {
+        $src = Join-Path $FfmpegRoot $pair[0]
+        if (-not (Test-Path $src)) { throw "FFmpeg's $($pair[0]) not found in $FfmpegRoot (it must ship with FFmpeg)" }
+        Copy-Item $src (Join-Path $Tools $pair[1]) -Force
+    }
+    Copy-Item (Join-Path $PSScriptRoot "licenses\DENO_LICENSE.txt") $Tools -Force
 }
-foreach ($exe in "ffmpeg.exe", "ffprobe.exe") {
-    $src = Join-Path $FfmpegDir $exe
-    if (-not (Test-Path $src)) { throw "$exe not found in $FfmpegDir" }
-    Copy-Item $src $Tools -Force
-}
-if (-not $DenoExe) {
-    $d = Get-Command deno -ErrorAction SilentlyContinue
-    if (-not $d) { throw "Deno not found on PATH; pass -DenoExe <path to deno.exe>" }
-    $DenoExe = $d.Source
-}
-Copy-Item $DenoExe (Join-Path $Tools "deno.exe") -Force
 
-Write-Host "Copying the tools' licences ..."
-$FfmpegRoot = Split-Path $FfmpegDir -Parent   # the gyan.dev build: bin\ beside LICENSE and README.txt
-foreach ($pair in @(@("LICENSE", "FFMPEG_LICENSE.txt"), @("README.txt", "FFMPEG_README.txt"))) {
-    $src = Join-Path $FfmpegRoot $pair[0]
-    if (-not (Test-Path $src)) { throw "FFmpeg's $($pair[0]) not found in $FfmpegRoot (it must ship with FFmpeg)" }
-    Copy-Item $src (Join-Path $Tools $pair[1]) -Force
-}
-Copy-Item (Join-Path $PSScriptRoot "licenses\DENO_LICENSE.txt") $Tools -Force
+# v0.22.0: what this build ships, so the app knows when its own copies are newer
+# than ones it updated earlier (component_updates.bundled_versions()).
+$denoV = [regex]::Match((& (Join-Path $Tools "deno.exe") --version | Out-String), 'deno (\d+\.\d+\.\d+)').Groups[1].Value
+$ffV = [regex]::Match((& (Join-Path $Tools "ffmpeg.exe") -hide_banner -version | Out-String), 'ffmpeg version (\d+(\.\d+)+)').Groups[1].Value
+$pyV = & $Py -c "from importlib import metadata as m; print(m.version('yt-dlp') + ' ' + m.version('yt-dlp-ejs'))"
+$ytV, $ejsV = "$pyV".Trim().Split(" ")
+$bundled = [ordered]@{ "yt-dlp" = $ytV; "yt-dlp-ejs" = $ejsV; "deno" = $denoV; "ffmpeg" = $ffV }
+$bundled | ConvertTo-Json | Set-Content (Join-Path $App "_internal\bundled_versions.json") -Encoding UTF8
+Write-Host ("Bundled: " + (($bundled.GetEnumerator() | ForEach-Object { "$($_.Key) $($_.Value)" }) -join ", "))
 
 if (-not $SkipSelfTest) {
     Write-Host "Running the self-test ..."

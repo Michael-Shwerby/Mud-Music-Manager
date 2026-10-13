@@ -53,6 +53,12 @@ import app_paths
 _DATA_DIR_NOTE = app_paths.prepare_data_dir() if __name__ == "__main__" else None
 # v0.19.1: FFmpeg and Deno shipped in the program's tools folder come first on PATH.
 _TOOLS_DIR = app_paths.add_tools_to_path() if __name__ == "__main__" else None
+# v0.22.0 (Checklist item 60g): newer yt-dlp / yt-dlp-ejs / Deno / FFmpeg the
+# packaged app downloaded and tested go ahead of the built-in ones (a staged
+# update is switched in here, before anything uses them).
+import component_updates
+
+_COMPONENTS_NOTE = component_updates.activate() if __name__ == "__main__" else None
 
 from datetime import datetime
 from pathlib import Path
@@ -82,6 +88,8 @@ if _DATA_DIR_NOTE:
     logger.log_event(_DATA_DIR_NOTE)
 if _TOOLS_DIR:
     logger.log_event(f"Using the bundled tools in {_TOOLS_DIR} (FFmpeg, Deno)")
+if _COMPONENTS_NOTE:
+    logger.log_event(_COMPONENTS_NOTE)
 
 # Enables ANSI color codes to render correctly on plain Windows
 # cmd.exe, not just Windows Terminal/PowerShell (which already support
@@ -1252,6 +1260,8 @@ def _offer_app_update(app_status):
     if os.environ.get(debug_console.CLI_FROM_GUI_ENV):
         print("  To install it, use Check For Updates -> Update now in the app.")
         return
+    if app_update.installed_for_all_users():  # v0.22.0
+        print("  This copy is installed for all users: Windows will ask for administrator permission.")
     answer = input(f"  Download and install v{app_status.latest} now? The menu closes and the app "
                    f"reopens updated. (y/n): ").strip().lower()
     if answer != "y":
@@ -1285,6 +1295,10 @@ def handle_update_libraries(dep_statuses, app_status=None):
             print("  (Your playlists, settings and music stay as they are.)")
             if app_status.can_install():  # v0.21.0 (Checklist item 60e): the installed app
                 _offer_app_update(app_status)
+    if component_updates.enabled():  # v0.22.0 (Checklist item 60g): yt-dlp / Deno / FFmpeg
+        print("\nChecking yt-dlp, yt-dlp-ejs, Deno and FFmpeg for newer versions...")
+        lines = component_updates.check_and_stage(force=True, on_log=lambda m: print(f"  {m}"))
+        print("  " + (" ".join(lines) if lines else "All up to date."))
     if dependency_checker.BUNDLED:  # v0.19.1: no pip in a packaged build
         print(f"\n{dependency_checker.BUNDLED_NOTE}.")
         return dep_statuses
@@ -1616,11 +1630,17 @@ def _edit_youtube_signin():
 
 def _print_libraries():
     print("\nProject libraries (from requirements.txt):")
-    for info in ui_libraries.describe_all():
+    for info in ui_libraries.describe_all(include_tools=False):
         if info.installed:
             print(f"  {info.name} {info.version}\n      {info.path}")
         else:
             print(f"  {info.name}: not installed")
+    print("\nPrograms the app uses:")  # v0.22.3
+    for info in ui_libraries.describe_tools():
+        if info.installed:
+            print(f"  {info.name} {info.version or '(version unknown)'}\n      {info.path}")
+        else:
+            print(f"  {info.name}: not found")
     env = ui_libraries.python_environment()
     print(f"\nPython {env['version']}: {env['executable']}")
     print(f"Packages folder: {env['site_packages']}")

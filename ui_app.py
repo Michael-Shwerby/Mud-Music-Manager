@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 
 import app_info
 import app_update
+import component_updates
 import config_manager
 import dependency_checker
 import exceptions_manager
@@ -473,6 +474,8 @@ class MainWindow(QMainWindow):
 
     def open_settings(self) -> None:
         self.settings_page.refresh()
+        self.settings_page.refresh_components()  # v0.22.0 (runs deno / ffmpeg --version, so only here)
+        self.settings_page.refresh_libraries()   # v0.22.3: with Deno and FFmpeg (read once per session)
         self.overlay.open_page(self.settings_page)
 
     def _overlay_closed(self) -> None:
@@ -536,6 +539,7 @@ class MainWindow(QMainWindow):
         """Called once the window is on screen. The playlist Scan is
         skipped when Settings → Scan on launch is Off (v0.16.17)."""
         self.run_update_check(announce=False)
+        self.run_component_update(force=False)  # v0.22.0: at most every 12 hours
         if ui_settings.get("scan_on_launch"):
             self.start_refresh()
         else:
@@ -562,6 +566,26 @@ class MainWindow(QMainWindow):
     # -- library updates ----------------------------------------------------
     def check_updates(self) -> None:
         self.run_update_check(announce=True)
+        self.run_component_update(force=True)  # v0.22.0: Check For Updates checks them now
+
+    # -- component updates (v0.22.0, Checklist item 60g) -----------------------
+    def run_component_update(self, force: bool) -> None:
+        """Newer yt-dlp / yt-dlp-ejs / Deno / FFmpeg for the packaged app, in the
+        background: downloaded, checked, tested; used from the next launch.
+        Quiet unless something was found; the Settings page shows the result."""
+        if not component_updates.enabled() or getattr(self, "_components_running", False):
+            return
+        self._components_running = True
+        thread = self.ctx.backend.run(ui_backend.component_update_task(force), heavy=False)
+        thread.resultReady.connect(self._on_components_done)
+        thread.failed.connect(lambda _m: self._on_components_done([]))
+
+    def _on_components_done(self, lines) -> None:
+        self._components_running = False
+        if self.overlay.is_open() and self.overlay.current_page() is self.settings_page:
+            self.settings_page.refresh_components()
+        if lines:
+            self.settings_page.set_components_message(" ".join(lines))
 
     def run_update_check(self, announce: bool) -> None:
         if getattr(self, "_checking", False):

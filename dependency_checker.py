@@ -34,7 +34,8 @@ import debug_console
 import logger
 
 BUNDLED = app_paths.FROZEN
-BUNDLED_NOTE = "Libraries are built into this version and updated with each app release"
+BUNDLED_NOTE = ("Libraries are built into this version and updated with each app release "
+                "(yt-dlp, Deno and FFmpeg also update on their own)")  # v0.22.0: component_updates.py
 
 TRACKED_PACKAGES = [
     "SpotipyFree",

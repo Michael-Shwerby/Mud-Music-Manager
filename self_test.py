@@ -32,7 +32,7 @@ import traceback
 TEST_VIDEO = "https://www.youtube.com/watch?v=jNQXAC9IVRw"  # "Me at the zoo", 19 s
 
 PROJECT_MODULES = (
-    "app_info", "app_paths", "app_update", "logger", "debug_console", "config_manager", "exceptions_manager",
+    "app_info", "app_paths", "app_update", "component_updates", "logger", "debug_console", "config_manager", "exceptions_manager",
     "track_failures", "ui_settings", "user_data", "download_settings", "youtube_cookies", "downloader",
     "metadata_tagger", "lyrics_provider", "youtube_matcher", "spotify_reader", "youtube_playlist_reader",
     "ytmusic_reader", "soundcloud_reader", "apple_music_reader", "amazon_music_reader", "acquisition_engine",
@@ -93,8 +93,13 @@ def run(download: bool = True) -> int:
     r.check("FFmpeg", bool(ffmpeg), ffmpeg or "not found -- conversions and some downloads will fail")
     deno = shutil.which("deno")
     r.check("Deno", bool(deno), deno or "not found -- many YouTube downloads will fail")
-    r.attempt("yt-dlp", lambda: f"v{importlib.import_module('yt_dlp.version').__version__}")
+    r.attempt("yt-dlp", lambda: f"v{importlib.import_module('yt_dlp.version').__version__} "
+                                f"from {os.path.dirname(os.path.dirname(importlib.import_module('yt_dlp').__file__))}")
     r.attempt("yt-dlp-ejs (YouTube challenge scripts)", lambda: importlib.import_module("yt_dlp_ejs") and None)
+    # v0.22.0 (Checklist item 60g): the versions in use, built in or updated
+    import component_updates
+    r.attempt("component versions", lambda: ", ".join(f"{k} {v}" for k, v in sorted(
+        component_updates.current_versions().items())))
 
     if download:
         print("\nDownload")

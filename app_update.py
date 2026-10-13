@@ -281,13 +281,48 @@ def launch_installer(path: str) -> None:
     (packaging\\installer.iss). The caller must quit the app straight after.
     Raises UpdateError if it can't be started."""
     args = [path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/relaunch=1"]
+    if installed_for_all_users():
+        # v0.22.0: Michael keeps the installer's "for all users" choice. Such a
+        # copy (Program Files) must be updated as an all-users install, so
+        # Windows asks for administrator permission; without /ALLUSERS the
+        # installer could put a second, per-user copy beside it instead.
+        args.append("/ALLUSERS")
     try:
         subprocess.Popen(args, close_fds=True, cwd=os.path.dirname(path),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          creationflags=0x00000008 | 0x00000200)  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     except OSError as e:
         logger.log_error(f"App update: couldn't start {path}: {e}")
         raise UpdateError(f"Couldn't start the installer: {e}")
     logger.log_event(f"App update: started {os.path.basename(path)}; closing the app for it")
+
+
+APP_ID_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{4974306D-5BCE-4E0F-A115-EED0580EF47D}_is1"
+
+
+def installed_for_all_users() -> bool:
+    """True when this copy was installed with "Install for all users": the
+    installer registered it for the whole computer (HKEY_LOCAL_MACHINE) and
+    it is running from that install folder (v0.22.0)."""
+    if not app_paths.FROZEN or not sys_is_windows():
+        return False
+    try:
+        import winreg
+        for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, APP_ID_KEY, 0, winreg.KEY_READ | view) as k:
+                    where = str(winreg.QueryValueEx(k, "InstallLocation")[0]).rstrip("\\/")
+                if os.path.normcase(os.path.abspath(where)) == os.path.normcase(app_paths.APP_DIR):
+                    return True
+            except OSError:
+                continue
+    except ImportError:
+        pass
+    return False
+
+
+def sys_is_windows() -> bool:
+    return os.name == "nt"
 
 
 def _remove(path: str) -> None:

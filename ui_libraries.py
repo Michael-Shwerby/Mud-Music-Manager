@@ -92,8 +92,41 @@ def describe_library(name: str) -> LibraryInfo:
     )
 
 
-def describe_all() -> List[LibraryInfo]:
-    return [describe_library(n) for n in requirement_names()]
+def describe_all(include_tools: bool = True) -> List[LibraryInfo]:
+    """Every library from requirements.txt, then (v0.22.3) the Deno and FFmpeg
+    programs the app uses."""
+    infos = [describe_library(n) for n in requirement_names()]
+    if include_tools:
+        infos += describe_tools()
+    return infos
+
+
+# v0.22.3: Deno and FFmpeg aren't Python packages (pip can't list them), but the
+# app depends on them, so the list shows them too: the version and the folder of
+# the copy actually in use (bundled, updated in the data folder, or the PC's).
+_TOOLS = (("Deno", "deno"), ("FFmpeg", "ffmpeg"))
+_tool_cache: Optional[List[LibraryInfo]] = None
+
+
+def describe_tools(refresh: bool = False) -> List[LibraryInfo]:
+    """Deno and FFmpeg as LibraryInfo rows. Reading a version runs the program
+    briefly, so the answer is kept for the session (the copy in use only
+    changes at a restart); refresh=True reads them again."""
+    global _tool_cache
+    if _tool_cache is not None and not refresh:
+        return list(_tool_cache)
+    import shutil
+    import component_updates
+    infos = []
+    for label, exe in _TOOLS:
+        found = shutil.which(exe)
+        if not found:
+            infos.append(LibraryInfo(name=label, installed=False))
+            continue
+        infos.append(LibraryInfo(name=label, installed=True, version=component_updates.tool_version(exe),
+                                 path=os.path.dirname(found)))
+    _tool_cache = infos
+    return list(infos)
 
 
 def python_environment() -> dict:

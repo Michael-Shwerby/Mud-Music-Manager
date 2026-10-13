@@ -1238,6 +1238,14 @@ def _recolour_links(document, colour: QColor) -> None:
         block = block.next()
 
 
+def _installed_for_all_users() -> bool:
+    try:
+        import app_update
+        return app_update.installed_for_all_users()
+    except Exception:
+        return False
+
+
 class AppUpdateDialog(BaseDialog):
     """A newer Mud Music Manager is published on GitHub (v0.19.0, Checklist
     item 60b): this version → the new one, its release notes, and a button
@@ -1265,9 +1273,12 @@ class AppUpdateDialog(BaseDialog):
         self._root.addWidget(notes, 1)
         # v0.21.0 (Checklist item 60e): the installed app can update itself.
         installable = status.can_install()
+        all_users = installable and _installed_for_all_users()
         how = QLabel(
             "Update now downloads it, checks it and installs it: Mud Music Manager closes and reopens by "
             "itself. Your playlists, settings and music stay as they are."
+            + (" This copy is installed for all users, so Windows will ask for administrator permission."
+               if all_users else "")
             if installable else
             "Download it from its page on GitHub. Your playlists, settings and music stay as they are.")
         how.setProperty("role", "muted")

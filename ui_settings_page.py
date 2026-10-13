@@ -60,6 +60,7 @@ from PySide6.QtWidgets import (
 
 import app_info
 import app_paths
+import component_updates
 import config_manager
 import download_settings
 import ui_debug
@@ -199,11 +200,33 @@ class SettingsPage(QWidget):
         self.update_label.setWordWrap(True)
         self.update_label.setProperty("role", "muted")
         ucol.addWidget(self.update_label)
+        # v0.22.0 (Checklist item 60g): the packaged app's components and their versions
+        self.components_label = QLabel("")
+        self.components_label.setProperty("role", "faint")
+        self.components_label.setWordWrap(True)
+        self.components_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        ucol.addWidget(self.components_label)
+        self.components_msg = QLabel("")
+        self.components_msg.setProperty("role", "muted")
+        self.components_msg.setWordWrap(True)
+        self.components_msg.hide()
+        ucol.addWidget(self.components_msg)
         ul.addLayout(ucol, 1)
+        ubtns = QVBoxLayout()
+        ubtns.setSpacing(8)
         self.update_btn = make_button("Check For Updates")
         self.update_btn.clicked.connect(self.checkUpdatesRequested.emit)
-        ul.addWidget(self.update_btn)
+        ubtns.addWidget(self.update_btn)
+        self.builtin_btn = make_button("Use built-in versions", "ghost", compact=True)
+        self.builtin_btn.setToolTip("Stop using the updated yt-dlp / Deno / FFmpeg and go back to the ones this "
+                                    "version came with (from the next launch)")
+        self.builtin_btn.clicked.connect(self._use_builtin_components)
+        ubtns.addWidget(self.builtin_btn)
+        ubtns.addStretch(1)
+        ul.addLayout(ubtns)
         col.addWidget(upd)
+        self.components_label.setVisible(False)  # filled in when Settings opens (refresh())
+        self.builtin_btn.setVisible(False)
 
         # ---- Libraries
         libs = make_panel()
@@ -214,11 +237,12 @@ class SettingsPage(QWidget):
         head.addWidget(CapsLabel("Project libraries", muted=True))
         head.addStretch(1)
         refresh = make_button("Refresh", "ghost", compact=True)
-        refresh.clicked.connect(self.refresh_libraries)
+        refresh.clicked.connect(lambda: self.refresh_libraries(include_tools=True, reread_tools=True))
         head.addWidget(refresh)
         ll.addLayout(head)
-        sub = QLabel("Where each library from requirements.txt is installed on this computer — "
-                     "handy for checking its files if something behaves inconsistently.")
+        sub = QLabel("Where each library from requirements.txt is installed on this computer, and the Deno and "
+                     "FFmpeg programs the app uses — handy for checking their files if something behaves "
+                     "inconsistently.")
         sub.setProperty("role", "muted")
         sub.setWordWrap(True)
         ll.addWidget(sub)
@@ -236,7 +260,7 @@ class SettingsPage(QWidget):
         col.addWidget(self._make_about_panel())
         col.addStretch(1)
 
-        self.refresh_libraries()
+        self.refresh_libraries(include_tools=False)  # Deno / FFmpeg added when Settings opens (v0.22.3)
         self.refresh()
 
     # ------------------------------------------------------------------
@@ -768,13 +792,56 @@ class SettingsPage(QWidget):
     def set_update_message(self, text: str) -> None:
         self.update_label.setText(text)
 
-    def refresh_libraries(self) -> None:
+    # ---- Components (v0.22.0, Checklist item 60g) -------------------------------
+    def refresh_components(self) -> None:
+        """The versions of yt-dlp / yt-dlp-ejs / Deno / FFmpeg in use (packaged
+        app only; from source, pip and the PC's own tools are used)."""
+        on = component_updates.enabled()
+        self.components_label.setVisible(on)
+        self.builtin_btn.setVisible(on)
+        if not on:
+            return
+        try:
+            lines = component_updates.describe()
+        except Exception as e:
+            lines = [f"Couldn't read the component versions ({type(e).__name__})."]
+        self.components_label.setText("Components: " + " · ".join(lines))
+        # v0.22.2: running from source the "built-in" versions are the PC's own copies
+        self.builtin_btn.setText("Use built-in versions" if app_paths.FROZEN else "Use this PC's versions")
+        state = component_updates.load_state()
+        self.builtin_btn.setEnabled(bool(state.get("active") or state.get("staged")) and not state.get("reset"))
+
+    def set_components_message(self, text: str) -> None:
+        self.components_msg.setText(text)
+        self.components_msg.setVisible(bool(text))
+
+    def _use_builtin_components(self) -> None:
+        label = self.builtin_btn.text()
+        which = ("the yt-dlp, Deno and FFmpeg versions this copy of Mud Music Manager came with"
+                 if app_paths.FROZEN else "the Deno and FFmpeg installed on this PC")
+        if not ui_dialogs.ask_yes_no(
+                self.window(), label,
+                f"Go back to {which}? It takes effect the next time the app starts. Newer versions will be "
+                "looked for again later.",
+                yes=label, no="Cancel"):
+            return
+        component_updates.reset_to_built_in()
+        self.refresh_components()
+        self.set_components_message(f"{which[0].upper()}{which[1:]} will be used from the next launch.")
+
+    def refresh_libraries(self, include_tools: bool = True, reread_tools: bool = False) -> None:
+        """v0.22.3: the list ends with Deno and FFmpeg (ui_libraries.describe_tools()).
+        Reading their versions runs them, so the page is first built without
+        them (at app start) and they're added when Settings opens."""
         while self.libs_box.count():
             item = self.libs_box.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        for info in ui_libraries.describe_all():
+        for info in ui_libraries.describe_all(include_tools=False):
             self.libs_box.addWidget(self._library_row(info))
+        if include_tools:
+            for info in ui_libraries.describe_tools(refresh=reread_tools):
+                self.libs_box.addWidget(self._library_row(info))
         env = ui_libraries.python_environment()
         self.env_label.setText(
             f"Python {env['version']}  ·  {env['executable']}\nPackages folder: {env['site_packages']}")
@@ -833,6 +900,9 @@ class SettingsPage(QWidget):
         c.addWidget(ver)
         owner = QLabel(f"{app_info.COPYRIGHT}\n{app_info.TRADEMARK_NOTE}")
         owner.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # v0.22.1: wraps; unwrapped this line (835 px) forced every Settings panel
+        # wider than the overlay, so their right ends were cut off.
+        owner.setWordWrap(True)
         c.addWidget(owner)
         warranty = QLabel(app_info.WARRANTY_NOTE)  # v0.17.5: the GPL's no-warranty notice
         warranty.setProperty("role", "faint")
