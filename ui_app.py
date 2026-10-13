@@ -35,6 +35,10 @@ Updates also ask GitHub whether a newer Mud Music Manager is published
 (app_update.py). A newer version comes first in the header's update
 message; Check For Updates then shows it (ui_dialogs.AppUpdateDialog)
 before the library updates.
+
+v0.21.0 (Checklist item 60e): in the installed app that dialog's Update now
+downloads and checks the installer (ui_dialogs.UpdateDownloadDialog), starts
+it and closes the app; the installer reopens it (_start_app_update()).
 """
 
 import gc
@@ -49,6 +53,7 @@ from PySide6.QtWidgets import (
 )
 
 import app_info
+import app_update
 import config_manager
 import dependency_checker
 import exceptions_manager
@@ -612,13 +617,48 @@ class MainWindow(QMainWindow):
         if not self._announce:
             return
         if app.outdated:
-            ui_dialogs.AppUpdateDialog(self, app).exec()
+            dlg = ui_dialogs.AppUpdateDialog(self, app)
+            dlg.exec()
+            if getattr(dlg, "choice", None) == "update":  # v0.21.0: Update now (installed app)
+                self._start_app_update(app)
+                return
         if outdated:
             dlg = ui_dialogs.UpdatesDialog(self, outdated)
             if dlg.exec() == dlg.Accepted:
                 self._install_updates(statuses)
         elif not app.outdated:
             ui_dialogs.info(self, "Check For Updates", f"{app.summary()}.\n{msg}.")
+
+    # -- one-click app update (v0.21.0, Checklist item 60e) ---------------------
+    def _start_app_update(self, status) -> None:
+        """Update now: download and check the installer on a background
+        thread (UpdateDownloadDialog shows it), then start it and close the
+        app; the installer reopens it. Not while a Sync / Scan / check runs,
+        and the Edit page's unsaved changes are dealt with first."""
+        if self.ctx.backend.heavy_running:
+            ui_dialogs.warn(self, "Update after this finishes",
+                            "A Sync, Scan or file check is running. Let it finish (or cancel it), then choose "
+                            "Check For Updates → Update now.")
+            return
+        if self.stack.currentIndex() == PAGE_EDIT and not self.edit_page.confirm_leave():
+            return
+        cancel = {"stop": False}
+        dlg = ui_dialogs.UpdateDownloadDialog(self, status, on_cancel=lambda: cancel.__setitem__("stop", True))
+        thread = self.ctx.backend.run(ui_backend.download_update_task(status, cancel), heavy=False)
+        thread.progress.connect(dlg.on_progress_text)
+        thread.resultReady.connect(lambda path: self._run_downloaded_installer(dlg, path))
+        thread.failed.connect(dlg.failed)
+        dlg.exec()
+
+    def _run_downloaded_installer(self, dlg, path: str) -> None:
+        dlg.starting_installer()
+        try:
+            app_update.launch_installer(path)
+        except app_update.UpdateError as e:
+            dlg.failed(str(e))
+            return
+        # Give the message a moment on screen, then close the app for the installer.
+        QTimer.singleShot(1200, lambda: (dlg.done(0), self.close(), QApplication.instance().quit()))
 
     def _install_updates(self, statuses) -> None:
         busy = ui_dialogs.BusyDialog(self, "Updating libraries", "Installing the newer versions…")

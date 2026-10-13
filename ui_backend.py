@@ -1223,6 +1223,26 @@ def check_updates_task() -> Callable:
     return fn
 
 
+def download_update_task(status, cancel: dict) -> Callable:
+    """Update now (v0.21.0, Checklist item 60e): download and check the
+    release's installer (app_update.download_installer). Progress goes out as
+    'done/total' bytes, at most once per percent; cancel["stop"] = True stops
+    it. Returns the installer's path; an app_update.UpdateError ends up in
+    the thread's failed signal with its message."""
+    def fn(thread: TaskThread):
+        last = {"pct": -1}
+
+        def progress(done: int, total: int) -> None:
+            pct = int(done * 100 / total) if total else done // 1_048_576
+            if pct != last["pct"]:
+                last["pct"] = pct
+                thread.progress.emit(f"{done}/{total}")
+
+        return app_update.download_installer(status, on_progress=progress,
+                                             should_cancel=lambda: bool(cancel.get("stop")))
+    return fn
+
+
 def install_updates_task(statuses) -> Callable:
     def fn(thread: TaskThread):
         lines = dependency_checker.update_outdated(statuses)

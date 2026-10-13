@@ -11,19 +11,30 @@ Builds the packaged Mud Music Manager (v0.19.1, Checklist item 60c).
 3. Copies FFmpeg (ffmpeg.exe, ffprobe.exe) and Deno (deno.exe) into its
    tools\ folder. By default the copies found on this computer's PATH are
    used; -FfmpegDir / -DenoExe name others.
+   Their licence texts go beside them (FFMPEG_LICENSE.txt, FFMPEG_README.txt
+   from the FFmpeg build's folder; DENO_LICENSE.txt from packaging\licenses).
 4. Runs the build's self-test (Mud Music Manager CLI.exe --selftest).
+5. (v0.20.0) Makes the release files in release\:
+     MudMusicManager-Setup-<version>.exe     the installer (Inno Setup 6)
+     MudMusicManager-Portable-<version>.zip  the same program + portable.txt
+     SHA256SUMS.txt                           fingerprints of both
+   The version is app_info.VERSION.
 
 Options: -Clean (start the build environment again), -SkipSelfTest,
--NoDownload (self-test without the test download), -BuildRoot <folder>
-(where .venv-build, build\ and dist\ go; default: the project folder).
+-NoDownload (self-test without the test download), -NoRelease (stop after
+the program folder), -BuildRoot <folder> (where .venv-build, build\, dist\
+and release\ go; default: the project folder; keep its path short, Windows
+limits paths to 260 characters), -Iscc <path to ISCC.exe>.
 #>
 param(
     [string]$FfmpegDir = "",
     [string]$DenoExe = "",
     [string]$BuildRoot = "",
+    [string]$Iscc = "",
     [switch]$Clean,
     [switch]$SkipSelfTest,
-    [switch]$NoDownload
+    [switch]$NoDownload,
+    [switch]$NoRelease
 )
 $ErrorActionPreference = "Stop"
 $Project = Split-Path $PSScriptRoot -Parent
@@ -39,9 +50,12 @@ if (-not (Test-Path $Py)) {
     Write-Host "Creating the build environment in $Venv ..."
     python -m venv $Venv
 }
-Write-Host "Installing the app's libraries and PyInstaller into the build environment ..."
+Write-Host "Installing the newest versions of the app's libraries and PyInstaller into the build environment ..."
 & $Py -m pip install --quiet --upgrade pip
-& $Py -m pip install --quiet -r (Join-Path $Project "requirements.txt") -r (Join-Path $PSScriptRoot "requirements-build.txt")
+# --upgrade (v0.21.0): every build ships the newest library versions, not the
+# ones the build environment happened to get the first time (Michael:
+# everything the app uses must keep updating).
+& $Py -m pip install --quiet --upgrade -r (Join-Path $Project "requirements.txt") -r (Join-Path $PSScriptRoot "requirements-build.txt")
 if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 
 Write-Host "Building with PyInstaller ..."
@@ -68,6 +82,15 @@ if (-not $DenoExe) {
 }
 Copy-Item $DenoExe (Join-Path $Tools "deno.exe") -Force
 
+Write-Host "Copying the tools' licences ..."
+$FfmpegRoot = Split-Path $FfmpegDir -Parent   # the gyan.dev build: bin\ beside LICENSE and README.txt
+foreach ($pair in @(@("LICENSE", "FFMPEG_LICENSE.txt"), @("README.txt", "FFMPEG_README.txt"))) {
+    $src = Join-Path $FfmpegRoot $pair[0]
+    if (-not (Test-Path $src)) { throw "FFmpeg's $($pair[0]) not found in $FfmpegRoot (it must ship with FFmpeg)" }
+    Copy-Item $src (Join-Path $Tools $pair[1]) -Force
+}
+Copy-Item (Join-Path $PSScriptRoot "licenses\DENO_LICENSE.txt") $Tools -Force
+
 if (-not $SkipSelfTest) {
     Write-Host "Running the self-test ..."
     $testArgs = @("--selftest")
@@ -76,4 +99,49 @@ if (-not $SkipSelfTest) {
     if ($LASTEXITCODE -ne 0) { throw "The self-test failed (see above)" }
 }
 $size = (Get-ChildItem $App -Recurse | Measure-Object Length -Sum).Sum / 1MB
-Write-Host ("Done: {0} ({1:N0} MB)" -f $App, $size)
+Write-Host ("Program folder: {0} ({1:N0} MB)" -f $App, $size)
+if ($NoRelease) { return }
+
+# ---- Release files (v0.20.0) -------------------------------------------------
+$Version = (Select-String -Path (Join-Path $Project "app_info.py") -Pattern '^VERSION = "([0-9.]+)"').Matches[0].Groups[1].Value
+$Release = Join-Path $BuildRoot "release"
+New-Item -ItemType Directory -Force $Release | Out-Null
+$Setup = Join-Path $Release "MudMusicManager-Setup-$Version.exe"
+$Zip = Join-Path $Release "MudMusicManager-Portable-$Version.zip"
+Remove-Item $Setup, $Zip -ErrorAction SilentlyContinue
+
+Write-Host "Making the portable .zip ..."
+$Stage = Join-Path $BuildRoot "build\portable\Mud Music Manager"
+if (Test-Path (Split-Path $Stage -Parent)) { Remove-Item (Split-Path $Stage -Parent) -Recurse -Force }
+New-Item -ItemType Directory -Force (Split-Path $Stage -Parent) | Out-Null
+Copy-Item $App $Stage -Recurse
+@"
+Mud Music Manager $Version - portable
+
+This file makes Mud Music Manager keep all of its data (playlists, settings,
+pictures, logs, backups) in this folder, next to the program, instead of in
+%APPDATA%\Mud Music Manager. Move or copy the whole folder anywhere, for
+example onto a USB stick. Delete this file to use %APPDATA% instead.
+
+Start the app with "Mud Music Manager.exe".
+"@ | Set-Content (Join-Path $Stage "portable.txt") -Encoding UTF8
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory((Split-Path $Stage -Parent), $Zip,
+    [System.IO.Compression.CompressionLevel]::Optimal, $false)
+
+Write-Host "Making the installer with Inno Setup ..."
+if (-not $Iscc) {
+    foreach ($c in @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+                     "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
+        if (Test-Path $c) { $Iscc = $c; break }
+    }
+}
+if (-not $Iscc) { throw "Inno Setup 6 (ISCC.exe) not found; install it (winget install JRSoftware.InnoSetup) or pass -Iscc" }
+& $Iscc /Q "/DAppVersion=$Version" "/DSourceDir=$App" "/DOutputDir=$Release" (Join-Path $PSScriptRoot "installer.iss")
+if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+
+Write-Host "Writing SHA256SUMS.txt ..."
+$sums = foreach ($f in @($Setup, $Zip)) { "{0}  {1}" -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLower(), (Split-Path $f -Leaf) }
+$sums | Set-Content (Join-Path $Release "SHA256SUMS.txt") -Encoding ASCII
+foreach ($f in @($Setup, $Zip)) { Write-Host ("  {0} ({1:N0} MB)" -f (Split-Path $f -Leaf), ((Get-Item $f).Length / 1MB)) }
+Write-Host "Release files are in $Release"

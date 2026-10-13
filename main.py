@@ -1245,6 +1245,37 @@ def handle_set_library_path(config):
 # Update Project Libraries
 # ---------------------------------------------------------------------------
 
+def _offer_app_update(app_status):
+    """Installed app (v0.21.0, Checklist item 60e): download, check and start
+    the new version's installer, then end the menu; the installer reopens the
+    app. Not from a menu opened by the app's CMD button (the app is open)."""
+    if os.environ.get(debug_console.CLI_FROM_GUI_ENV):
+        print("  To install it, use Check For Updates -> Update now in the app.")
+        return
+    answer = input(f"  Download and install v{app_status.latest} now? The menu closes and the app "
+                   f"reopens updated. (y/n): ").strip().lower()
+    if answer != "y":
+        print("  Not installed.")
+        return
+    shown = {"pct": -1}
+
+    def progress(done, total):
+        pct = int(done * 100 / total) if total else -1
+        if pct // 10 != shown["pct"] // 10 or pct == 100:
+            shown["pct"] = pct
+            print(f"  Downloading... {pct}%" if pct >= 0 else f"  Downloading... {done // 1_048_576} MB")
+
+    try:
+        path = app_update.download_installer(app_status, on_progress=progress)
+        print("  Checked: the download matches the release's fingerprint.")
+        app_update.launch_installer(path)
+    except app_update.UpdateError as e:
+        print(f"  {e}")
+        return
+    print("  The installer is running. Mud Music Manager reopens when it's done. Goodbye!")
+    sys.exit(0)
+
+
 def handle_update_libraries(dep_statuses, app_status=None):
     # v0.19.0 (Checklist item 60b): a newer Mud Music Manager first, with its page.
     if app_status is not None:
@@ -1252,6 +1283,8 @@ def handle_update_libraries(dep_statuses, app_status=None):
         if app_status.outdated:
             print(f"  Download it from: {app_status.page_url}")
             print("  (Your playlists, settings and music stay as they are.)")
+            if app_status.can_install():  # v0.21.0 (Checklist item 60e): the installed app
+                _offer_app_update(app_status)
     if dependency_checker.BUNDLED:  # v0.19.1: no pip in a packaged build
         print(f"\n{dependency_checker.BUNDLED_NOTE}.")
         return dep_statuses
@@ -1627,7 +1660,8 @@ def run_cli():
         print("\tUpdate Project Libraries")
         print(f"\t   {_dependency_status_line(dep_statuses)}")
         if app_status.outdated:  # v0.19.0: only when there is something newer
-            print(f"\t   {app_status.summary()} -- type Update for the link")
+            print(f"\t   {app_status.summary()} -- type Update "
+                  f"{'to install it' if app_status.can_install() else 'for the link'}")
         print()
         print("Done")
 

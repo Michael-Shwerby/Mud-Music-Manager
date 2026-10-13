@@ -45,6 +45,7 @@ portable.txt
 .venv-build/
 build/
 dist/
+release/
 
 # Python
 __pycache__/

@@ -2,6 +2,15 @@
 
 What changed in each version, newest first.
 
+## v0.21.0 (2026-10-13)
+- **One-click updates:** when a new version is out, Check For Updates → **Update now** downloads it, checks that it's the genuine file, installs it and reopens the app. (Installed app only; the portable version links to the download page.)
+
+## v0.20.0 (2026-10-13)
+- **Windows installer:** `MudMusicManager-Setup-0.20.0.exe` installs Mud Music Manager for your account, with no administrator prompt. It adds a Start menu shortcut, an optional desktop shortcut and an uninstaller. Python, the libraries, FFmpeg and Deno are all included, so there's nothing else to install.
+- **Portable version:** `MudMusicManager-Portable-0.20.0.zip` runs from any folder (even a USB stick) and keeps its data next to the program.
+- Installing a newer version updates the app in place. Your playlists, settings and music are never touched by installing, updating or uninstalling.
+- Windows may show "Windows protected your PC" the first time: choose **More info → Run anyway** (the installer isn't code-signed yet).
+
 ## v0.19.1 (2026-10-13)
 - Groundwork for the Windows installer: the app can now run as a packaged program with its own Python, libraries, FFmpeg and Deno.
 - Fixed: a fresh install could crash at start because two libraries the Spotify reader needs weren't listed. **Requirements changed:** run `pip install -r requirements.txt`.

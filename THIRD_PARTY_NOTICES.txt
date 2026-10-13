@@ -3,29 +3,54 @@ Copyright (c) 2026 Michael Xuereb.
 Mud Music Manager is free software under the GNU General Public License,
 version 3 or (at your option) any later version. See LICENSE.txt.
 
-Mud Music Manager uses the open-source libraries below. They are not part
-of Mud Music Manager, are not owned by Michael Xuereb, and each stays under
-its own licence. They are installed separately from requirements.txt and
-are not bundled with the app. Every licence below is compatible with
-Mud Music Manager's GPL-3.0-or-later licence.
+Mud Music Manager uses the open-source software below. It is not part of
+Mud Music Manager, is not owned by Michael Xuereb, and each stays under its
+own licence. Every licence below is compatible with Mud Music Manager's
+GPL-3.0-or-later licence.
 
-Library        Licence                                   Project
--------------  ----------------------------------------  ------------------------------------------
-PySide6 (Qt)   LGPL-3.0 (or GPL-2.0 / GPL-3.0)           https://pyside.org
-yt-dlp         Unlicense (public domain)                 https://github.com/yt-dlp/yt-dlp
-ytmusicapi     MIT                                       https://github.com/sigma67/ytmusicapi
-SpotipyFree    MIT (Copyright (c) Tzur Soffer)           https://pypi.org/project/SpotipyFree/
-mutagen        GPL-2.0-or-later                          https://mutagen.readthedocs.io
-requests       Apache-2.0                                https://requests.readthedocs.io
-syncedlyrics   MIT                                       https://github.com/rtcq/syncedlyrics
-packaging      Apache-2.0 or BSD-2-Clause                https://packaging.pypa.io
-colorama       BSD-3-Clause                              https://github.com/tartley/colorama
+When you run Mud Music Manager from its source code, you install these
+yourself (pip install -r requirements.txt, plus FFmpeg and Deno). The
+installer and the portable .zip (v0.20.0 on) include them: Python and the
+libraries in the "_internal" folder, FFmpeg and Deno in the "tools" folder.
 
-External tool (not bundled, used if installed): FFmpeg, LGPL-2.1+ / GPL-2.0+
-depending on the build, https://ffmpeg.org
+Library            Licence                                   Project
+-----------------  ----------------------------------------  ------------------------------------------
+PySide6 (Qt)       LGPL-3.0 (or GPL-2.0 / GPL-3.0)           https://pyside.org
+yt-dlp             Unlicense (public domain)                 https://github.com/yt-dlp/yt-dlp
+yt-dlp-ejs         Unlicense, MIT and ISC                    https://github.com/yt-dlp/ejs
+ytmusicapi         MIT                                       https://github.com/sigma67/ytmusicapi
+SpotipyFree        MIT (Copyright (c) Tzur Soffer)           https://pypi.org/project/SpotipyFree/
+spotapi            GPL-3.0 (by Aran)                         https://pypi.org/project/spotapi/
+mutagen            GPL-2.0-or-later                          https://mutagen.readthedocs.io
+requests           Apache-2.0                                https://requests.readthedocs.io
+syncedlyrics       MIT                                       https://github.com/rtcq/syncedlyrics
+packaging          Apache-2.0 or BSD-2-Clause                https://packaging.pypa.io
+colorama           BSD-3-Clause                              https://github.com/tartley/colorama
+redis              MIT                                       https://github.com/redis/redis-py
+websockets         BSD-3-Clause                              https://github.com/python-websockets/websockets
 
-The full licence text of each library is included in its installed package
-(Settings > Project libraries > Open folder shows where each one is).
+Used by the libraries above and included in the installer / portable .zip:
+curl_cffi (MIT), pymongo (Apache-2.0), rapidfuzz (MIT), beautifulsoup4 (MIT),
+Pillow (MIT-CMU), pyotp (MIT), readerwriterlock (MIT), validators (MIT),
+certifi (MPL-2.0), urllib3 (MIT), charset-normalizer (MIT), idna (BSD-3-Clause),
+typing_extensions (PSF-2.0), shiboken6 (LGPL-3.0, with PySide6), and Python
+itself (PSF License, https://www.python.org). The program files are made with
+PyInstaller (GPL-2.0-or-later with an exception for the programs it builds,
+https://pyinstaller.org).
+
+Tools included in the installer / portable .zip ("tools" folder):
+FFmpeg         GPL-3.0 (the gyan.dev "essentials" build)   https://ffmpeg.org
+               Source code: https://github.com/FFmpeg/FFmpeg ; build details
+               and the exact source version are in tools\FFMPEG_README.txt,
+               the licence in tools\FFMPEG_LICENSE.txt.
+Deno           MIT                                          https://deno.com
+               Licence in tools\DENO_LICENSE.txt.
+
+The full licence text of each library is in its "*.dist-info" folder: in
+the "_internal" folder of the installed app, or in your Python installation
+when running from source (Settings > Project libraries > Open folder shows
+where each one is). PySide6 / Qt are LGPL-licensed and kept as separate files
+in "_internal", so they can be replaced with other compatible versions.
 
 Trademarks
 Spotify, YouTube, YT Music, SoundCloud, Apple Music and Amazon Music are
