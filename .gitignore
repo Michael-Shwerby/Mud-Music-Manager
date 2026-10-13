@@ -41,6 +41,11 @@ Test_Exceptions_B.py
 Your data has moved.txt
 portable.txt
 
+# Packaged builds (packaging/build.ps1): the build environment and its output
+.venv-build/
+build/
+dist/
+
 # Python
 __pycache__/
 *.py[cod]

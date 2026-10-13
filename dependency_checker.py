@@ -12,6 +12,12 @@ itself -- that's a much riskier, more manual operation (can affect other
 things on the system) that doesn't belong in an automated in-app flow.
 This only ever touches the packages listed in TRACKED_PACKAGES, via pip,
 in the current Python environment.
+
+v0.19.1 (Checklist item 60c): in a packaged build (BUNDLED) the libraries
+are part of the program and there is no pip, so nothing is checked or
+updated here: check_all() returns no statuses and the callers say the
+libraries come with each app release (app_update.py tells the user about
+those). BUNDLED_NOTE is the wording they use.
 """
 
 import subprocess
@@ -23,8 +29,12 @@ from typing import List, Optional
 import requests
 from packaging.version import InvalidVersion, Version
 
+import app_paths
 import debug_console
 import logger
+
+BUNDLED = app_paths.FROZEN
+BUNDLED_NOTE = "Libraries are built into this version and updated with each app release"
 
 TRACKED_PACKAGES = [
     "SpotipyFree",
@@ -72,7 +82,11 @@ def check_all() -> List[PackageStatus]:
     A network failure or missing package for one entry doesn't stop the
     others from being checked -- each package's status independently
     reflects what could actually be determined.
+
+    In a packaged build (BUNDLED) returns [] without asking PyPI.
     """
+    if BUNDLED:
+        return []
     statuses = []
     for package_name in TRACKED_PACKAGES:
         installed = _get_installed_version(package_name)
@@ -139,6 +153,8 @@ def update_outdated(statuses: List[PackageStatus]) -> List[str]:
     packages, so an update here won't take effect until the application
     is restarted -- callers should tell the user that.
     """
+    if BUNDLED:
+        return [BUNDLED_NOTE + "."]
     results = []
     outdated = [s for s in statuses if s.outdated]
 

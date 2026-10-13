@@ -27,6 +27,13 @@ import sys
 
 import debug_console
 
+# v0.19.1 (Checklist item 60c): in a packaged build the Debug Window's helper
+# is this program's console version started with --debug-console (there is no
+# Python to run it with); it only relays the app's log lines, then exits.
+if __name__ == "__main__" and debug_console.DEBUG_HELPER_ARG in sys.argv[1:]:
+    exec(compile(debug_console.HELPER_SCRIPT, "debug-console-helper", "exec"), {"__name__": "__main__"})
+    sys.exit(0)
+
 # Must run before the heavy imports below. When started by double-clicking
 # (Windows), restart under pythonw.exe so no console window stays open, then
 # exit this console-owning copy. Does nothing for `--cli`, from a terminal
@@ -44,6 +51,8 @@ if __name__ == "__main__" and "--cli" not in sys.argv[1:]:
 import app_paths
 
 _DATA_DIR_NOTE = app_paths.prepare_data_dir() if __name__ == "__main__" else None
+# v0.19.1: FFmpeg and Deno shipped in the program's tools folder come first on PATH.
+_TOOLS_DIR = app_paths.add_tools_to_path() if __name__ == "__main__" else None
 
 from datetime import datetime
 from pathlib import Path
@@ -71,6 +80,8 @@ VERSION = app_info.VERSION  # v0.18.0: the one version number lives in app_info.
 
 if _DATA_DIR_NOTE:
     logger.log_event(_DATA_DIR_NOTE)
+if _TOOLS_DIR:
+    logger.log_event(f"Using the bundled tools in {_TOOLS_DIR} (FFmpeg, Deno)")
 
 # Enables ANSI color codes to render correctly on plain Windows
 # cmd.exe, not just Windows Terminal/PowerShell (which already support
@@ -358,6 +369,8 @@ def _dependency_status_line(dep_statuses):
     attention -- âœ… when everything's current, âœ— when at least one
     tracked package has a newer version available.
     """
+    if dependency_checker.BUNDLED:  # v0.19.1: packaged build
+        return dependency_checker.BUNDLED_NOTE + "."
     outdated = [s for s in dep_statuses if s.outdated]
     if outdated:
         names = ", ".join(s.name for s in outdated)
@@ -1239,6 +1252,9 @@ def handle_update_libraries(dep_statuses, app_status=None):
         if app_status.outdated:
             print(f"  Download it from: {app_status.page_url}")
             print("  (Your playlists, settings and music stay as they are.)")
+    if dependency_checker.BUNDLED:  # v0.19.1: no pip in a packaged build
+        print(f"\n{dependency_checker.BUNDLED_NOTE}.")
+        return dep_statuses
     outdated = [s for s in dep_statuses if s.outdated]
     if not outdated:
         print("\nAll project libraries are up to date.")
@@ -1728,6 +1744,11 @@ def _terminal_fallback(note):
 def main():
     """Default: the graphical app. `--cli` (or a failure to start the
     GUI, e.g. PySide6 not installed) uses the classic terminal menu."""
+    if "--selftest" in sys.argv[1:]:
+        # v0.19.1 (Checklist item 60c): checks a build has everything it needs
+        # (run from a console: `Mud Music Manager CLI.exe --selftest`).
+        import self_test
+        sys.exit(self_test.run(download="--no-download" not in sys.argv[1:]))
     if "--cli" in sys.argv[1:]:
         if debug_console.cli_can_run_here():  # a console, or the in-app CMD window's pipes (v0.16.7)
             run_cli()

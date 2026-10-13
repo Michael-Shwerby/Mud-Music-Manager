@@ -2,6 +2,10 @@
 
 What changed in each version, newest first.
 
+## v0.19.1 (2026-10-13)
+- Groundwork for the Windows installer: the app can now run as a packaged program with its own Python, libraries, FFmpeg and Deno.
+- Fixed: a fresh install could crash at start because two libraries the Spotify reader needs weren't listed. **Requirements changed:** run `pip install -r requirements.txt`.
+
 ## v0.19.0 (2026-10-13)
 - **New version check:** when a newer Mud Music Manager is released on GitHub, the app says so at launch. Check For Updates shows what's new and links to the download page. The terminal menu shows it too.
 

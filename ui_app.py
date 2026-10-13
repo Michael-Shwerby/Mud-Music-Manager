@@ -590,7 +590,10 @@ class MainWindow(QMainWindow):
         self._app_update = app
         outdated = [s for s in statuses if s.outdated]
         unknown = [s for s in statuses if s.check_error and not s.outdated]
-        if outdated:
+        if dependency_checker.BUNDLED:  # v0.19.1: a packaged build has no separate libraries
+            msg = dependency_checker.BUNDLED_NOTE
+            tone = "ok"
+        elif outdated:
             msg = f"{len(outdated)} library update{'s' if len(outdated) != 1 else ''} available"
             tone = "warn"
         elif unknown and len(unknown) == len(statuses):

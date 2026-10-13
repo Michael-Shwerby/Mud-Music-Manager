@@ -1,0 +1,2 @@
+# Only needed to BUILD the packaged app (packaging/build.ps1), not to run it.
+pyinstaller>=6.16

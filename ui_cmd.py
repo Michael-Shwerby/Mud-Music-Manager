@@ -23,6 +23,10 @@ when the menu exits (`done`, or any other exit).
 v0.17.9 (Checklist item 59): both modes set MMM_CLI_FROM_GUI on the menu,
 so its Settings -> Import is refused while the app is open (the app holds
 ui_settings in memory and would write it back over the imported settings).
+
+v0.19.1 (Checklist item 60c): the command comes from
+debug_console.cli_command(), which in a packaged build is the console
+program `Mud Music Manager CLI.exe --cli` (there is no python.exe there).
 """
 
 import os
@@ -38,19 +42,20 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QVBoxLayout, QWidget,
 )
 
+import app_paths
 import debug_console
 import logger
 import ui_settings
 import ui_theme
 from ui_widgets import make_button
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MAIN_SCRIPT = os.path.join(BASE_DIR, "main.py")
+BASE_DIR = app_paths.APP_DIR  # v0.19.1: the program folder, also in a packaged build
 
 
 def cli_command() -> list:
     # v0.16.3: under pythonw.exe (no console) the menu needs python.exe.
-    return [debug_console.console_python_executable(), "-u", MAIN_SCRIPT, "--cli"]
+    # v0.19.1: in a packaged build, the console program `Mud Music Manager CLI.exe --cli`.
+    return debug_console.cli_command()
 
 
 # ---------------------------------------------------------------------------

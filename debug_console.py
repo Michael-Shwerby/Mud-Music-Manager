@@ -28,6 +28,12 @@ What it does
    different process and is unaffected. Settings -> "Close Debug Window"
    closes it from inside the app. On other systems ui_debug.py shows an
    in-app log window fed from the same buffer.
+
+4. Packaged build (v0.19.1, Checklist item 60c). There is no python.exe or
+   main.py there: the terminal menu is `Mud Music Manager CLI.exe --cli`
+   (cli_command()), the Debug Window helper is the same program with
+   --debug-console, and the pythonw relaunch is skipped (the app is already a
+   windowed program).
 """
 
 import collections
@@ -40,7 +46,10 @@ import sys
 import threading
 from typing import Callable, List, Optional
 
+import app_paths  # standard library only; imports nothing from the project
+
 IS_WINDOWS = sys.platform.startswith("win")
+DEBUG_HELPER_ARG = "--debug-console"   # v0.19.1: the packaged CLI program runs the Debug Window helper
 
 RELAUNCH_ENV = "MMM_GUI_RELAUNCHED"   # set on the relaunched process (guards against loops)
 CLI_NOTE_ENV = "MMM_CLI_NOTE"          # a one-line note the terminal menu prints first
@@ -237,6 +246,18 @@ def console_python_executable() -> str:
     return exe
 
 
+def cli_command(unbuffered: bool = True) -> List[str]:
+    """The command that runs the terminal menu (v0.19.1, Checklist item 60c):
+    the packaged build's console program with `--cli`, or, from source, the
+    console Python running main.py --cli."""
+    if app_paths.FROZEN:
+        return [app_paths.cli_exe(), "--cli"]
+    cmd = [console_python_executable()]
+    if unbuffered:
+        cmd.append("-u")
+    return cmd + [os.path.join(app_paths.APP_DIR, "main.py"), "--cli"]
+
+
 def hidden_window_flags() -> int:
     """creationflags that stop a child process from flashing a console
     window (0 off Windows). Used for pip when running without a console."""
@@ -300,8 +321,8 @@ def relaunch_without_console_if_owned(script: str, args: List[str]) -> bool:
     its console), start `script` again under pythonw.exe with no console and
     return True - the caller should then exit immediately. Returns False,
     changing nothing, in every other case."""
-    if not IS_WINDOWS or os.environ.get(RELAUNCH_ENV):
-        return False
+    if not IS_WINDOWS or os.environ.get(RELAUNCH_ENV) or app_paths.FROZEN:
+        return False  # v0.19.1: a packaged app is already a windowed program
     try:
         if not has_console():
             return False
@@ -367,11 +388,13 @@ def install_early_excepthook() -> None:
     sys.excepthook = hook
 
 
-def launch_cli_in_new_console(script: str, note: str = "") -> Optional[str]:
-    """Open the terminal menu (`script --cli`) in a brand-new console window.
-    Used when the app has no console of its own but needs one (the GUI can't
-    start, or --cli was started without a terminal). Returns None on
-    success, otherwise a short explanation."""
+def launch_cli_in_new_console(script: str = "", note: str = "") -> Optional[str]:
+    """Open the terminal menu in a brand-new console window. Used when the
+    app has no console of its own but needs one (the GUI can't start, or
+    --cli was started without a terminal). `script` is no longer needed
+    (v0.19.1: cli_command() knows the source / packaged command); kept so
+    older calls still work. Returns None on success, otherwise a short
+    explanation."""
     if not IS_WINDOWS:
         return "No terminal is attached."
     try:
@@ -379,8 +402,8 @@ def launch_cli_in_new_console(script: str, note: str = "") -> Optional[str]:
         if note:
             env[CLI_NOTE_ENV] = note
         subprocess.Popen(
-            [console_python_executable(), script, "--cli"],
-            env=env, cwd=os.path.dirname(os.path.abspath(script)),
+            cli_command(unbuffered=False),
+            env=env, cwd=app_paths.APP_DIR,
             creationflags=_CREATE_NEW_CONSOLE,
         )
         return None
@@ -470,10 +493,13 @@ def open_external_console() -> Optional[str]:
     with _ext_lock:
         if _ext_proc is not None and _ext_proc.poll() is None:
             return None
+        # v0.19.1: a packaged build has no Python to run -c with; its console
+        # program runs the same helper (main.py handles DEBUG_HELPER_ARG first).
+        cmd = ([app_paths.cli_exe(), DEBUG_HELPER_ARG] if app_paths.FROZEN
+               else [console_python_executable(), "-u", "-c", HELPER_SCRIPT])
         try:
             proc = subprocess.Popen(
-                [console_python_executable(), "-u", "-c", HELPER_SCRIPT],
-                stdin=subprocess.PIPE, creationflags=_CREATE_NEW_CONSOLE, close_fds=True,
+                cmd, stdin=subprocess.PIPE, creationflags=_CREATE_NEW_CONSOLE, close_fds=True,
             )
         except Exception as e:
             return f"Couldn't open the Debug Window: {e}"

@@ -11,6 +11,8 @@ project, so every module (logger and debug_console included) can use it.
                 LICENSE.txt, THIRD_PARTY_NOTICES.txt, requirements.txt).
                 APP_DIR when running from source; PyInstaller's bundle
                 folder (sys._MEIPASS) in a packaged build.
+  TOOLS_DIR     APP_DIR/tools: FFmpeg and Deno shipped with a packaged
+                build (v0.19.1), put first on PATH by add_tools_to_path().
   DATA_DIR      the user's data: playlists.json, exceptions.json,
                 track_failures.json, ui_settings.json (each with its .bak),
                 logs/, playlist_icons/ and backups/.
@@ -63,6 +65,32 @@ PORTABLE_MARKER = "portable.txt"
 FROZEN = bool(getattr(sys, "frozen", False))
 APP_DIR = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 RESOURCE_DIR = getattr(sys, "_MEIPASS", APP_DIR) if FROZEN else APP_DIR
+
+# v0.19.1 (Checklist item 60c): a packaged build is two programs sharing one
+# folder of libraries: the windowed app, and a console one for the terminal
+# menu (`--cli`) and the Debug Window helper. FFmpeg and Deno ship in TOOLS_DIR.
+GUI_EXE_NAME = "Mud Music Manager.exe"
+CLI_EXE_NAME = "Mud Music Manager CLI.exe"
+TOOLS_DIR = os.path.join(APP_DIR, "tools")
+
+
+def cli_exe() -> str:
+    """The packaged build's console program (only meaningful when FROZEN)."""
+    return os.path.join(APP_DIR, CLI_EXE_NAME)
+
+
+def add_tools_to_path() -> Optional[str]:
+    """Put the bundled tools folder (ffmpeg.exe, ffprobe.exe, deno.exe) first
+    on this process's PATH, so yt-dlp, downloader.ffmpeg_path() and every
+    child process find them there before any copy installed on the computer.
+    Does nothing when there is no tools folder (running from source with
+    FFmpeg / Deno installed as before). Returns the folder added, or None."""
+    if not os.path.isdir(TOOLS_DIR):
+        return None
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    if not any(_same_folder(p, TOOLS_DIR) for p in parts if p):
+        os.environ["PATH"] = os.pathsep.join([TOOLS_DIR] + [p for p in parts if p])
+    return TOOLS_DIR
 
 # What a version before v0.18.0 kept in APP_DIR.
 _MAIN_FILES = ("playlists.json", "exceptions.json", "track_failures.json", "ui_settings.json")

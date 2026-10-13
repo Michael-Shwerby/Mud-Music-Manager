@@ -1,6 +1,11 @@
 SpotipyFree>=1.9.13
+# spotapi (used by SpotipyFree) imports redis and websockets when it loads but
+# doesn't list them as requirements, so a fresh install needs them named here.
+redis>=5.0
+websockets>=14.0
 ytmusicapi>=1.12.1
 yt-dlp>=2026.08.19
+yt-dlp-ejs>=0.8.0
 mutagen>=1.47.0
 requests>=2.32.0
 syncedlyrics>=1.0.1
