@@ -1,0 +1,40 @@
+Mud Music Manager - Third-Party Notices
+Copyright (c) 2026 Michael Xuereb.
+Mud Music Manager is free software under the GNU General Public License,
+version 3 or (at your option) any later version. See LICENSE.txt.
+
+Mud Music Manager uses the open-source libraries below. They are not part
+of Mud Music Manager, are not owned by Michael Xuereb, and each stays under
+its own licence. They are installed separately from requirements.txt and
+are not bundled with the app. Every licence below is compatible with
+Mud Music Manager's GPL-3.0-or-later licence.
+
+Library        Licence                                   Project
+-------------  ----------------------------------------  ------------------------------------------
+PySide6 (Qt)   LGPL-3.0 (or GPL-2.0 / GPL-3.0)           https://pyside.org
+yt-dlp         Unlicense (public domain)                 https://github.com/yt-dlp/yt-dlp
+ytmusicapi     MIT                                       https://github.com/sigma67/ytmusicapi
+SpotipyFree    MIT (Copyright (c) Tzur Soffer)           https://pypi.org/project/SpotipyFree/
+mutagen        GPL-2.0-or-later                          https://mutagen.readthedocs.io
+requests       Apache-2.0                                https://requests.readthedocs.io
+syncedlyrics   MIT                                       https://github.com/rtcq/syncedlyrics
+packaging      Apache-2.0 or BSD-2-Clause                https://packaging.pypa.io
+colorama       BSD-3-Clause                              https://github.com/tartley/colorama
+
+External tool (not bundled, used if installed): FFmpeg, LGPL-2.1+ / GPL-2.0+
+depending on the build, https://ffmpeg.org
+
+The full licence text of each library is included in its installed package
+(Settings > Project libraries > Open folder shows where each one is).
+
+Trademarks
+Spotify, YouTube, YT Music, SoundCloud, Apple Music and Amazon Music are
+trademarks of their respective owners. Mud Music Manager is not affiliated
+with, sponsored or endorsed by any of them. Their names appear in the app
+only to say where a playlist comes from; the round platform badges are
+plain lettered tags drawn by the app, not those companies' logos.
+
+"Mud Music Manager", the MMM logo and the MMM emblem (the files in the
+"assets" folder) are trademarks of Michael Xuereb. Under section 7(e) of
+the GPL, the licence does not grant any right to use them as trademarks:
+a modified version you distribute must use a different name and logo.

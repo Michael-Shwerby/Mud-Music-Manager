@@ -1,0 +1,49 @@
+# Mud Music Manager: keep personal data out of the public repository.
+# The app creates each of these files by itself when it first runs.
+
+# Your playlists, exceptions, failure records and settings
+playlists.json
+exceptions.json
+track_failures.json
+ui_settings.json
+*.json.bak
+*.bak
+
+# Logs (they hold your playlist names, song titles and folder paths)
+logs/
+
+# YouTube cookie files, in case one is ever saved in the app folder
+cookies.txt
+*cookies*.txt
+
+# Playlist icons you picked
+playlist_icons/
+
+# Safety copies made before Settings -> Import (v0.17.8), and exported backups
+backups/
+Mud Music Manager backup*.zip
+
+# Private project documents (kept off GitHub; back them up elsewhere).
+# The public history is RELEASE_NOTES.md; CHANGELOG.md is the full working history.
+Mud_Music_Manager_Design_Doc.md
+Mud_Music_Manager_Checklist.md
+CHANGELOG.md
+CLAUDE.md
+
+# Personal test scripts
+test.py
+test_2.py
+Test_Exceptions_A.py
+Test_Exceptions_B.py
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

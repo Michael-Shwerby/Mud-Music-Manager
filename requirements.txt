@@ -1,0 +1,9 @@
+SpotipyFree>=1.9.13
+ytmusicapi>=1.12.1
+yt-dlp>=2026.08.19
+mutagen>=1.47.0
+requests>=2.32.0
+syncedlyrics>=1.0.1
+packaging>=23.0
+colorama>=0.4.6
+PySide6>=6.7.0
