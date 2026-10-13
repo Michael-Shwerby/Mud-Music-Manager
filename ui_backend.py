@@ -50,6 +50,7 @@ from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtGui import QImage
 
 import acquisition_engine
+import app_update
 import config_manager
 import debug_console
 import dependency_checker
@@ -1214,8 +1215,11 @@ def _forget_cached_missing(entry: dict, keys: List[str]) -> None:
 
 
 def check_updates_task() -> Callable:
+    """The libraries (dependency_checker) and, since v0.19.0 (Checklist item
+    60b), whether a newer Mud Music Manager is published (app_update):
+    {"libraries": [PackageStatus], "app": AppUpdateStatus}."""
     def fn(thread: TaskThread):
-        return dependency_checker.check_all()
+        return {"libraries": dependency_checker.check_all(), "app": app_update.check_latest()}
     return fn
 
 

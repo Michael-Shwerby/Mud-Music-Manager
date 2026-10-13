@@ -23,6 +23,10 @@ ones do, with the platform named in the hints and the picker.
 v0.17.8 (Checklist item 59): ImportDataDialog, the confirmation before
 Settings → Your data → Import replaces this computer's data.
 
+v0.19.0 (Checklist item 60b): AppUpdateDialog, shown by Check For Updates
+when a newer Mud Music Manager is published: its release notes and a
+button opening its download page.
+
 v0.16.24 (Checklist item 27 part 3): keyboard. Each dialog marks its safe
 button (Cancel, Keep editing, Not now, No) with safe_first(); ui_keys
 starts there, so a stray Space can't delete or change anything. Dialogs
@@ -33,10 +37,11 @@ import os
 import re
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QObject, QThread, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QThread, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-    QPushButton, QVBoxLayout, QWidget,
+    QPushButton, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 import acquisition_engine
@@ -1201,6 +1206,67 @@ class UpdatesDialog(BaseDialog):
         update = make_button("Update now", "primary")
         update.clicked.connect(self.accept)
         self.add_buttons(later, update)
+
+
+def _recolour_links(document, colour: QColor) -> None:
+    """Qt's Markdown reader colours links its own fixed blue, unreadable on
+    the dark theme: give every link the theme's link colour instead."""
+    block = document.begin()
+    while block.isValid():
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.charFormat().isAnchor():
+                cursor = QTextCursor(document)
+                cursor.setPosition(frag.position())
+                cursor.setPosition(frag.position() + frag.length(), QTextCursor.KeepAnchor)
+                fmt = QTextCharFormat()
+                fmt.setForeground(colour)
+                cursor.mergeCharFormat(fmt)
+            it += 1
+        block = block.next()
+
+
+class AppUpdateDialog(BaseDialog):
+    """A newer Mud Music Manager is published on GitHub (v0.19.0, Checklist
+    item 60b): this version → the new one, its release notes, and a button
+    that opens its download page in the browser. Nothing is installed from
+    here yet (Checklist item 60e)."""
+
+    def __init__(self, parent, status):
+        when = f", released {status.published}" if status.published else ""
+        super().__init__(
+            parent, "A new version is available",
+            f"Mud Music Manager v{status.latest}{when}. You have v{status.current}.",
+            min_width=620,
+        )
+        self.setMinimumHeight(420)
+        heading = QLabel("What's new")
+        heading.setProperty("role", "capsmuted")
+        self._root.addWidget(heading)
+        notes = QTextBrowser()
+        notes.setOpenExternalLinks(True)
+        if status.notes:
+            notes.setMarkdown(status.notes)
+            _recolour_links(notes.document(), QColor(ui_theme.palette().link))
+        else:
+            notes.setPlainText("This release has no notes.")
+        self._root.addWidget(notes, 1)
+        how = QLabel("Download it from its page on GitHub. Your playlists, settings and music stay as they are.")
+        how.setProperty("role", "muted")
+        how.setWordWrap(True)
+        self._root.addWidget(how)
+        self._url = status.page_url
+        later = safe_first(make_button("Not now"))
+        later.clicked.connect(self.reject)
+        page = make_button("Open download page", "primary")
+        page.setToolTip(self._url)
+        page.clicked.connect(self._open_page)
+        self.add_buttons(later, page)
+
+    def _open_page(self) -> None:
+        QDesktopServices.openUrl(QUrl(self._url))
+        self.accept()
 
 
 class BusyDialog(QDialog):

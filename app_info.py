@@ -30,7 +30,11 @@ import app_paths
 APP_NAME = "Mud Music Manager"
 # The one version number (MAJOR.MINOR.PATCH). It must match the GitHub
 # release tag (v0.18.0) and the version in the three project documents.
-VERSION = "0.18.2"
+VERSION = "0.19.0"
+# Where releases are published (v0.19.0, app_update.py). The new-version
+# check reads this repository's latest GitHub release; it needs the
+# repository to be public (a private one looks like it has no release).
+GITHUB_REPO = "Michael-Shwerby/Mud-Music-Manager"
 OWNER = "Michael Xuereb"
 COPYRIGHT_YEAR = "2026"
 # v0.17.5 (Checklist item 56): open source under GPL-3.0-or-later (was "All rights reserved").

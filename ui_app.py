@@ -29,6 +29,12 @@ showing (the Main Menu so far); G opens and closes Settings.
 v0.17.1: branding (Checklist item 52): the emblem is the icon of every
 window and of the taskbar button (its own Windows taskbar identity,
 app_info.WINDOWS_APP_ID), and the header shows Michael's logo.
+
+v0.19.0 (Checklist item 60b): the launch-time update check and Check For
+Updates also ask GitHub whether a newer Mud Music Manager is published
+(app_update.py). A newer version comes first in the header's update
+message; Check For Updates then shows it (ui_dialogs.AppUpdateDialog)
+before the library updates.
 """
 
 import gc
@@ -380,6 +386,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setMinimumSize(1080, 680)
         self._dep_statuses = None
+        self._app_update = None  # app_update.AppUpdateStatus, v0.19.0
 
         bg = GlowBackground()
         self.setCentralWidget(bg)
@@ -555,7 +562,7 @@ class MainWindow(QMainWindow):
         if getattr(self, "_checking", False):
             return
         self._checking = True
-        self.header.set_checking(True, "Checking required libraries…")
+        self.header.set_checking(True, "Checking for updates…")
         self.header.update_btn.setEnabled(False)
         self.settings_page.update_btn.setEnabled(False)
         self._announce = announce
@@ -573,30 +580,42 @@ class MainWindow(QMainWindow):
         self.header.set_checking(False, "Couldn't check for updates")
         self.header.set_version_tone("warn")
 
-    def _on_update_result(self, statuses) -> None:
+    def _on_update_result(self, result) -> None:
+        """v0.19.0 (Checklist item 60b): the result also says whether a newer
+        Mud Music Manager is published; that comes first in the header and,
+        on Check For Updates, in its own dialog before the libraries'."""
         self._finish_check()
+        statuses, app = result["libraries"], result["app"]
         self._dep_statuses = statuses
+        self._app_update = app
         outdated = [s for s in statuses if s.outdated]
         unknown = [s for s in statuses if s.check_error and not s.outdated]
         if outdated:
             msg = f"{len(outdated)} library update{'s' if len(outdated) != 1 else ''} available"
-            self.header.set_checking(False, msg)
-            self.header.set_version_tone("warn")
+            tone = "warn"
         elif unknown and len(unknown) == len(statuses):
             msg = "Couldn't reach PyPI — libraries not verified"
-            self.header.set_checking(False, msg)
-            self.header.set_version_tone("neutral")
+            tone = "neutral"
         else:
             msg = "Required libraries are up to date"
-            self.header.set_checking(False, msg)
-            self.header.set_version_tone("ok")
+            tone = "ok"
+        if app.outdated:
+            msg = app.summary() + (f" · {msg[0].lower()}{msg[1:]}" if outdated else "")
+            tone = "warn"
+        self.header.set_checking(False, msg)
+        self.header.set_version_tone(tone)
+        self.header.version_pill.setToolTip(app.summary())
         self.settings_page.set_update_message(msg)
-        if outdated and self._announce:
+        if not self._announce:
+            return
+        if app.outdated:
+            ui_dialogs.AppUpdateDialog(self, app).exec()
+        if outdated:
             dlg = ui_dialogs.UpdatesDialog(self, outdated)
             if dlg.exec() == dlg.Accepted:
                 self._install_updates(statuses)
-        elif self._announce and not outdated:
-            ui_dialogs.info(self, "Check For Updates", msg + ".")
+        elif not app.outdated:
+            ui_dialogs.info(self, "Check For Updates", f"{app.summary()}.\n{msg}.")
 
     def _install_updates(self, statuses) -> None:
         busy = ui_dialogs.BusyDialog(self, "Updating libraries", "Installing the newer versions…")
@@ -654,8 +673,11 @@ class _UpdateRelay(QObject):
             self._window, "Library update", text + "\n\nRestart Mud Music Manager for these updates to take effect.").exec()
         outdated = [s for s in result["statuses"] if s.outdated]
         msg = "Required libraries are up to date" if not outdated else f"{len(outdated)} library update(s) still pending"
+        app = getattr(self._window, "_app_update", None)
+        if app is not None and app.outdated:  # v0.19.0: the newer app version stays first
+            msg = app.summary() + (f" · {msg[0].lower()}{msg[1:]}" if outdated else "")
         self._window.header.set_checking(False, msg)
-        self._window.header.set_version_tone("ok" if not outdated else "warn")
+        self._window.header.set_version_tone("ok" if not outdated and not (app and app.outdated) else "warn")
         self._window.settings_page.set_update_message(msg)
 
     def on_failed(self, message):

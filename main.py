@@ -53,6 +53,7 @@ from colorama import init as colorama_init, Fore, Style
 import config_manager
 import acquisition_engine
 import app_info
+import app_update
 import artist_watch
 import library_sync
 import exceptions_manager
@@ -1231,10 +1232,16 @@ def handle_set_library_path(config):
 # Update Project Libraries
 # ---------------------------------------------------------------------------
 
-def handle_update_libraries(dep_statuses):
+def handle_update_libraries(dep_statuses, app_status=None):
+    # v0.19.0 (Checklist item 60b): a newer Mud Music Manager first, with its page.
+    if app_status is not None:
+        print(f"\n{app_status.summary()}.")
+        if app_status.outdated:
+            print(f"  Download it from: {app_status.page_url}")
+            print("  (Your playlists, settings and music stay as they are.)")
     outdated = [s for s in dep_statuses if s.outdated]
     if not outdated:
-        print("\nEverything is up to date.")
+        print("\nAll project libraries are up to date.")
         return dep_statuses
 
     print(f"\n{len(outdated)} package(s) have updates available:")
@@ -1581,8 +1588,9 @@ def run_cli():
 
     config = config_manager.load_config()
 
-    print("Checking for package updates...")
+    print("Checking for updates...")
     dep_statuses = dependency_checker.check_all()
+    app_status = app_update.check_latest()  # v0.19.0 (Checklist item 60b)
 
     while True:
         print("\n" + "=" * 50)
@@ -1602,6 +1610,8 @@ def run_cli():
         print("\tSettings")
         print("\tUpdate Project Libraries")
         print(f"\t   {_dependency_status_line(dep_statuses)}")
+        if app_status.outdated:  # v0.19.0: only when there is something newer
+            print(f"\t   {app_status.summary()} -- type Update for the link")
         print()
         print("Done")
 
@@ -1629,7 +1639,7 @@ def run_cli():
             elif action == "change_path":
                 handle_set_library_path(config)
             elif action == "update":
-                dep_statuses = handle_update_libraries(dep_statuses)
+                dep_statuses = handle_update_libraries(dep_statuses, app_status)
             elif action == "settings":
                 handle_settings(config)
             elif action == "done":

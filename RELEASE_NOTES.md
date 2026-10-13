@@ -2,6 +2,9 @@
 
 What changed in each version, newest first.
 
+## v0.19.0 (2026-10-13)
+- **New version check:** when a newer Mud Music Manager is released on GitHub, the app says so at launch. Check For Updates shows what's new and links to the download page. The terminal menu shows it too.
+
 ## v0.18.2 (2026-10-12)
 - The data folder path in Settings can be selected and copied (right-click → Copy).
 

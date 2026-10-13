@@ -194,7 +194,9 @@ class SettingsPage(QWidget):
         ucol = QVBoxLayout()
         ucol.setSpacing(2)
         ucol.addWidget(CapsLabel("Updates", muted=True))
-        self.update_label = QLabel("Check whether the project’s libraries are up to date.")
+        self.update_label = QLabel("Check for a newer Mud Music Manager and whether the project’s libraries "
+                                   "are up to date.")  # v0.19.0: the app too
+        self.update_label.setWordWrap(True)
         self.update_label.setProperty("role", "muted")
         ucol.addWidget(self.update_label)
         ul.addLayout(ucol, 1)
