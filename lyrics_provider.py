@@ -11,11 +11,12 @@ Lyrics are "nice-to-have, not required" per the design doc (Section
 3.1) -- a failed or missing lookup should never block the rest of the
 acquisition/tagging pipeline, and this module never raises for that
 reason.
+
+v0.23.3: syncedlyrics is imported on the first lookup, not at app launch
+(it took ~0.08 s of every launch; see spotify_reader's "Faster launch").
 """
 
 from typing import Optional
-
-import syncedlyrics
 
 import logger
 from spotify_reader import Track
@@ -30,6 +31,8 @@ def get_lyrics(track: Track) -> Optional[str]:
     """
     search_term = f"{track.primary_artist} - {track.name}"
     try:
+        import syncedlyrics
+
         lyrics = syncedlyrics.search(search_term, plain_only=True)
     except Exception as e:
         logger.log_error(f"Lyrics lookup failed for '{search_term}': {e}")

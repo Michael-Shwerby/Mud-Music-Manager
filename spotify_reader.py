@@ -56,20 +56,27 @@ Artists (v0.16.50, Checklist items 41b / 41c):
   (albums, then singles & EPs, each newest first; Michael's choice) as
   ArtistInfo / Release, for the discography picker and for watching an
   artist for new releases.
+
+Faster launch (v0.23.3):
+  spotapi and SpotipyFree (which itself imports spotapi) are imported the
+  first time a Spotify read actually runs, not when this module is
+  imported. Nearly every other module imports this one just for Track /
+  AlbumInfo / ArtistInfo / Release, and spotapi brings in a large chain
+  of libraries (pymongo, redis, curl_cffi, ...) that took ~0.5-1 s of
+  every launch before the window could appear. The reads themselves are
+  unchanged; the first one in a session pays that one-off import cost
+  instead (on a background thread in the GUI).
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Collection, List, Optional, Tuple
 
-import spotapi
-from spotapi.http.request import TLSClient
-from SpotipyFree import Spotify
-from SpotipyFree.Formatter import SpotifyFormatter
-
 import logger
 
-_client: Optional[Spotify] = None
+# v0.23.3: spotapi / SpotipyFree are imported inside the functions that use
+# them (see "Faster launch" above), so the annotations below are strings.
+_client: Optional["Spotify"] = None
 
 
 @dataclass
@@ -133,7 +140,9 @@ class UnavailableItem:
         return _REASON_TEXT.get(self.reason, self.reason.replace("_", " ").capitalize())
 
 
-def _get_client() -> Spotify:
+def _get_client() -> "Spotify":
+    from SpotipyFree import Spotify
+
     global _client
     if _client is None:
         _client = Spotify()
@@ -164,6 +173,9 @@ def _new_shared_song() -> Optional["spotapi.Song"]:
     It gets its own HTTP session, so its login hooks never mix with any
     other spotapi object's. Returns None if it can't be created."""
     try:
+        import spotapi
+        from spotapi.http.request import TLSClient
+
         return spotapi.Song(client=TLSClient("chrome120", "", auto_retries=3))
     except Exception as e:
         logger.log_error(f"Couldn't set up a shared Spotify client, using one per track: {e}")
@@ -182,6 +194,8 @@ def _close_shared_song(song: Optional["spotapi.Song"]) -> None:
 def _shared_track(song: "spotapi.Song", spotify_id: str) -> dict:
     """Same result as SpotipyFree's Spotify.track() (same request, same
     formatting), but through the shared client instead of a new one."""
+    from SpotipyFree.Formatter import SpotifyFormatter
+
     track = song.get_track_info(spotify_id)["data"]["trackUnion"]
     try:
         artists = track["firstArtist"]["items"]
@@ -192,7 +206,7 @@ def _shared_track(song: "spotapi.Song", spotify_id: str) -> dict:
 
 
 def _fetch_full_track(
-    client: Spotify, spotify_id: str, fallback: dict, song: Optional["spotapi.Song"] = None
+    client: "Spotify", spotify_id: str, fallback: dict, song: Optional["spotapi.Song"] = None
 ) -> dict:
     """Fetch full track details (fills in album/year/cover art, which
     the playlist listing alone doesn't include). Tries the shared client
@@ -241,6 +255,9 @@ def _read_listing(spotify_playlist_id: str) -> Tuple[List[Tuple[int, dict]], Lis
     the item's 1-indexed Spotify position, counting items that couldn't
     be read (v0.16.37; see the module docstring), which are logged and
     returned separately (v0.16.39)."""
+    import spotapi
+    from SpotipyFree.Formatter import SpotifyFormatter
+
     listing = []
     unavailable = []
     position = 0
@@ -427,6 +444,9 @@ def _read_album(album_id: str, all_pages: bool) -> Tuple[dict, list]:
     """(the album's data, [its track items]) from spotapi, one shared
     HTTP session for every page. Raises RuntimeError with a user-facing
     message if the album can't be read."""
+    import spotapi
+    from spotapi.http.request import TLSClient
+
     client = TLSClient("chrome120", "", auto_retries=3)
     try:
         reader = spotapi.PublicAlbum(album_id, client=client)
@@ -638,6 +658,9 @@ def get_artist_discography(artist_input: str,
     with spotapi (public data, no login). Raises RuntimeError with a
     user-facing message if the artist can't be read.
     """
+    import spotapi
+    from spotapi.http.request import TLSClient
+
     artist_id = _artist_id_of(artist_input)
     client = TLSClient("chrome120", "", auto_retries=3)
     try:

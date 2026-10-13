@@ -2,6 +2,21 @@
 
 What changed in each version, newest first.
 
+## v0.23.3 (2026-10-13)
+- The app opens faster: about 1–1.5 seconds quicker. The Spotify and lyrics libraries now load the first time they're needed, not at launch, and the playlist list is built once instead of twice.
+
+## v0.23.2 (2026-10-13)
+- Settings: every option is now in a titled group with an icon. The new groups are Other (on Preferences) and Download Settings.
+- Closing Settings is now as quick as opening it.
+
+## v0.23.1 (2026-10-13)
+- Settings opens instantly (it used to freeze the app for a moment); the library and component versions fill in a moment later. The app also starts a little faster.
+- Preferences: more space between the Visuals group and the settings below it.
+
+## v0.23.0 (2026-10-13)
+- **Settings is organised into pages:** Preferences, Download Settings and User Data & Installation, picked with tabs at the top, and About on its own tab at the right. Related settings are grouped under titled icons (Visuals, User Data, User Installation).
+- Settings is larger, and nothing in it is cut off when the window is made smaller.
+
 ## v0.22.3 (2026-10-13)
 - Settings → Project libraries also lists Deno and FFmpeg, with their versions and folders.
 

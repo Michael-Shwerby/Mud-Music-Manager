@@ -434,10 +434,12 @@ class MainWindow(QMainWindow):
         self.keys = ui_keys.KeyboardController(self)
         ctx.keys = self.keys
 
-        self.go(PAGE_MAIN)
+        # v0.23.3: MainPage built its bars a moment ago (its __init__ ends in
+        # reload()), so don't build them all a second time (~0.25 s of launch).
+        self.go(PAGE_MAIN, rebuild_main=False)
 
     # -- navigation -----------------------------------------------------
-    def go(self, page: int) -> None:
+    def go(self, page: int, rebuild_main: bool = True) -> None:
         current = self.stack.currentIndex()
         if current in (PAGE_EDIT,) and page == PAGE_MAIN:
             self.edit_page.stop_player()
@@ -458,7 +460,7 @@ class MainWindow(QMainWindow):
             self.header.set_actions(self.edit_page.header_widgets())
         else:
             self.header.set_actions([])
-        if on_main:
+        if on_main and rebuild_main:
             self.main_page.reload()
 
     def open_edit(self, entry: dict) -> None:
@@ -474,11 +476,17 @@ class MainWindow(QMainWindow):
 
     def open_settings(self) -> None:
         self.settings_page.refresh()
-        self.settings_page.refresh_components()  # v0.22.0 (runs deno / ffmpeg --version, so only here)
-        self.settings_page.refresh_libraries()   # v0.22.3: with Deno and FFmpeg (read once per session)
         self.overlay.open_page(self.settings_page)
+        # v0.22.0 / v0.22.3: the components line and Project libraries (with Deno and
+        # FFmpeg); v0.23.1: read in the background, so Settings opens without a pause
+        self.settings_page.refresh_installation()
 
     def _overlay_closed(self) -> None:
+        # v0.23.2: not after Settings. Nothing there changes what the Main Menu shows
+        # (Import reloads it itself, data_imported(); the theme repaints by itself), and
+        # rebuilding every playlist bar made closing Settings lag (~0.27 s, 20 playlists).
+        if self.overlay.pages.currentWidget() is self.settings_page:
+            return
         # same refresh the main page got when its Back button returned to it
         if self.stack.currentIndex() == PAGE_MAIN:
             self.main_page.reload()
@@ -583,7 +591,7 @@ class MainWindow(QMainWindow):
     def _on_components_done(self, lines) -> None:
         self._components_running = False
         if self.overlay.is_open() and self.overlay.current_page() is self.settings_page:
-            self.settings_page.refresh_components()
+            self.settings_page.refresh_installation()
         if lines:
             self.settings_page.set_components_message(" ".join(lines))
 

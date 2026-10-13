@@ -23,6 +23,12 @@ dark / light by theme; see app_info.py).
 v0.17.4 (Checklist item 55): smooth scrolling can be turned off in
 Settings (smooth_scrolling_on(), ui_settings "smooth_scroll"); the other
 animations are not affected.
+
+v0.23.0: GroupIcon (the painted badge beside a Settings group's title:
+visuals, user data, installation); SegmentedControl.clear_selection()
+(Settings' page tabs are two controls, the pages and About, of which
+only one shows a choice); OverlayHost sizes its sheet by the page's
+OVERLAY_SIZE_FRACTION (Settings is larger than the results pages).
 """
 
 import hashlib
@@ -1155,6 +1161,103 @@ class SpeakerIcon(QWidget):
             p.drawArc(QRectF(s * .34, s * .18, s * .48, s * .64), -50 * 16, 100 * 16)
 
 
+class GroupIcon(QWidget):
+    """Painted badge beside a Settings group's title (v0.23.0): a rounded
+    square in the accent gradient with a glyph in the on-accent colour.
+    kind: 'visuals' (an eye), 'user_data' (a database cylinder),
+    'install' (an arrow into a tray); v0.23.2: 'other' (three sliders),
+    'download' (an arrow down out of a cloud). Not a button."""
+
+    def __init__(self, kind: str, size: int = 36, parent=None):
+        super().__init__(parent)
+        self.kind = kind
+        self.setFixedSize(size, size)
+        _watch_theme(self)
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        pal = palette()
+        s = self.width()
+        r = QRectF(0.5, 0.5, s - 1, s - 1)
+        g = QLinearGradient(r.topLeft(), r.bottomRight())
+        g.setColorAt(0, QColor(pal.accent))
+        g.setColorAt(1, QColor(pal.accent2))
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(g))
+        p.drawRoundedRect(r, s * 0.28, s * 0.28)
+
+        col = QColor(pal.on_accent)
+        pen = QPen(col, max(1.6, s * 0.075))
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        k = self.kind
+        if k == "visuals":
+            path = QPainterPath()
+            path.moveTo(s * .18, s * .5)
+            path.quadTo(s * .5, s * .16, s * .82, s * .5)
+            path.quadTo(s * .5, s * .84, s * .18, s * .5)
+            p.drawPath(path)
+            p.setPen(Qt.NoPen)
+            p.setBrush(col)
+            p.drawEllipse(QPointF(s * .5, s * .5), s * .11, s * .11)
+        elif k == "user_data":
+            left, right, w = s * .27, s * .73, s * .46
+            p.drawEllipse(QRectF(left, s * .20, w, s * .15))
+            p.drawLine(QPointF(left, s * .275), QPointF(left, s * .72))
+            p.drawLine(QPointF(right, s * .275), QPointF(right, s * .72))
+            # lower halves of the middle and bottom rims (angles in 1/16 degree)
+            p.drawArc(QRectF(left, s * .42, w, s * .15), 180 * 16, 180 * 16)
+            p.drawArc(QRectF(left, s * .645, w, s * .15), 180 * 16, 180 * 16)
+        elif k == "install":
+            p.drawLine(QPointF(s * .5, s * .20), QPointF(s * .5, s * .58))
+            head = QPainterPath()
+            head.moveTo(s * .35, s * .44)
+            head.lineTo(s * .5, s * .59)
+            head.lineTo(s * .65, s * .44)
+            p.drawPath(head)
+            tray = QPainterPath()
+            tray.moveTo(s * .23, s * .56)
+            tray.lineTo(s * .23, s * .77)
+            tray.lineTo(s * .77, s * .77)
+            tray.lineTo(s * .77, s * .56)
+            p.drawPath(tray)
+        elif k == "other":
+            knobs = ((.32, .40), (.50, .64), (.68, .34))  # (y, knob x) of each slider
+            for y, _x in knobs:
+                p.drawLine(QPointF(s * .24, s * y), QPointF(s * .76, s * y))
+            p.setPen(Qt.NoPen)
+            p.setBrush(col)
+            for y, x in knobs:
+                p.drawEllipse(QPointF(s * x, s * y), s * .075, s * .075)
+        elif k == "download":
+            # an open-bottomed cloud with an arrow down out of it, drawn on a
+            # 24-unit grid centred in the badge
+            u = s * 0.66 / 24
+            p.translate(s / 2 - 12 * u, s / 2 - 14.5 * u)
+            p.scale(u, u)
+            pen.setWidthF(pen.widthF() / u)
+            p.setPen(pen)
+
+            def arc(cx, cy, r, start, sweep):  # degrees, counter-clockwise on screen
+                cloud.arcTo(QRectF(cx - r, cy - r, 2 * r, 2 * r), start, sweep)
+
+            cloud = QPainterPath()
+            cloud.moveTo(20.88, 18.09)
+            arc(18, 14, 5, -54.8, 144.8)     # the small bump on the right
+            cloud.lineTo(16.74, 9)
+            arc(9, 11, 8, 14.5, 206.9)       # the big bump, round to the lower left
+            p.drawPath(cloud)
+            p.drawLine(QPointF(12, 12), QPointF(12, 21))
+            head = QPainterPath()
+            head.moveTo(8, 17)
+            head.lineTo(12, 21)
+            head.lineTo(16, 17)
+            p.drawPath(head)
+
+
 # ---------------------------------------------------------------------------
 # Checkbox, segmented control, spinner, progress bar
 # ---------------------------------------------------------------------------
@@ -1244,6 +1347,23 @@ class SegmentedControl(QWidget):
     def set_current(self, key: str) -> None:
         if key in self._buttons:
             self._buttons[key].setChecked(True)
+
+    def current(self) -> Optional[str]:
+        b = self._group.checkedButton()
+        return next((k for k, v in self._buttons.items() if v is b), None)
+
+    def clear_selection(self) -> None:
+        """No option chosen, no pill (v0.23.0: Settings' page tabs, when
+        the other control's tab is the one showing)."""
+        b = self._group.checkedButton()
+        if b is None:
+            return
+        self._group.setExclusive(False)  # an exclusive group won't uncheck its last button
+        b.setChecked(False)
+        self._group.setExclusive(True)
+        self._pill_anim.stop()
+        self._pill = None
+        self.update()
 
     # ---- sliding pill ----------------------------------------------------
     def _checked_rect(self) -> Optional[QRectF]:
@@ -1485,7 +1605,11 @@ class OverlayHost(QWidget):
     child covering the parent, so it follows the main window's size and
     position. Esc, a click on the dimmed area, or the page's own close
     button (which calls close_overlay) closes it. While it is open, mouse
-    clicks and Tab focus stay inside the sheet."""
+    clicks and Tab focus stay inside the sheet.
+
+    v0.23.0: a page can ask for a bigger sheet with an
+    OVERLAY_SIZE_FRACTION attribute (Settings); the sheet still keeps
+    EDGE px inside the window, so it is never larger than the window."""
 
     closed = Signal()
 
@@ -1525,6 +1649,7 @@ class OverlayHost(QWidget):
         if self.pages.indexOf(page) < 0:
             self.add_page(page)
         self.pages.setCurrentWidget(page)
+        self._place_sheet()  # v0.23.0: each page may ask for its own size
         if not self.isVisible():
             fw = QApplication.focusWidget()
             self._return_focus = fw if fw is not None and not self.isAncestorOf(fw) else None
@@ -1550,8 +1675,9 @@ class OverlayHost(QWidget):
     # -- geometry -----------------------------------------------------------
     def sheet_rect(self) -> QRect:
         w, h = self.width(), self.height()
-        sw = max(0, min(max(int(w * self.SIZE_FRACTION), self.MIN_W), w - 2 * self.EDGE))
-        sh = max(0, min(max(int(h * self.SIZE_FRACTION), self.MIN_H), h - 2 * self.EDGE))
+        frac = getattr(self.pages.currentWidget(), "OVERLAY_SIZE_FRACTION", self.SIZE_FRACTION)
+        sw = max(0, min(max(int(w * frac), self.MIN_W), w - 2 * self.EDGE))
+        sh = max(0, min(max(int(h * frac), self.MIN_H), h - 2 * self.EDGE))
         return QRect((w - sw) // 2, (h - sh) // 2, sw, sh)
 
     def _place_sheet(self) -> None:

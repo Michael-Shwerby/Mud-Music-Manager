@@ -48,6 +48,31 @@ v0.18.2: that path can be selected and copied (drag, or right-click → Copy).
 v0.17.1: About (Checklist item 52), the last panel: the logo, name,
 version, copyright and trademark lines, the platform disclaimer, and
 License / Third-party notices buttons (LICENSE.txt, THIRD_PARTY_NOTICES.txt).
+
+v0.23.0 (Michael's request): the settings are split into pages, picked
+with tabs under the title (show_page()), each page its own scroll area:
+  Preferences -- the Visuals group (Appearance, Smooth scrolling), then
+    CMD button, Scan on launch, Debug window;
+  Download Settings -- Prefer explicit versions, YouTube sign-in,
+    Download quality (no group);
+  User Data & Installation -- the User Data group (Keyboard, Music
+    folder, Your data + Data folder) and the User Installation group
+    (Updates, Project libraries).
+About is a fourth page whose tab sits on its own at the far right. Each
+group has a painted icon (ui_widgets.GroupIcon). The sheet is larger
+than before (OVERLAY_SIZE_FRACTION), and each page scrolls sideways
+rather than cutting a row off if the window is ever too narrow for it.
+The page last shown stays selected until the app closes.
+
+v0.23.1: a wider gap after each group, so the settings that follow one
+read as separate. The components line and Project libraries are read on
+a worker thread each time Settings opens (refresh_installation()); done
+on the GUI thread they froze the app ~0.6 s before the sheet appeared.
+
+v0.23.2 (Michael's change of mind): every setting is now in a group.
+Preferences' CMD button, Scan on launch and Debug window are the Other
+group; the Download Settings page's three are one group, Download
+Settings. Both have icons (ui_widgets.GroupIcon 'other', 'download').
 """
 
 import os
@@ -55,7 +80,7 @@ import os
 from PySide6.QtCore import QPoint, QStandardPaths, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QMenu, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QLabel, QMenu, QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 import app_info
@@ -72,7 +97,8 @@ import ui_theme
 import user_data
 import youtube_cookies
 from ui_widgets import (
-    AppLogo, CapsLabel, ElidedLabel, GlyphButton, SegmentedControl, make_button, make_panel, smooth_scroll,
+    AppLogo, CapsLabel, ElidedLabel, GlyphButton, GroupIcon, SegmentedControl, make_button, make_panel,
+    smooth_scroll,
 )
 
 
@@ -88,9 +114,22 @@ class SettingsPage(QWidget):
     themeChanged = Signal(str)
     checkUpdatesRequested = Signal()
 
+    # v0.23.0: a larger sheet than the results pages' two-thirds (ui_widgets.OverlayHost)
+    OVERLAY_SIZE_FRACTION = 0.86
+
+    # v0.23.0: the pages, in tab order; About sits apart at the far right
+    PAGE_PREFERENCES = "preferences"
+    PAGE_DOWNLOADS = "downloads"
+    PAGE_USER = "user"
+    PAGE_ABOUT = "about"
+
     def __init__(self, ctx, parent=None):
         super().__init__(parent)
         self.ctx = ctx
+        self._install_reading = False   # v0.23.1: refresh_installation()
+        self._install_again = False
+        self._install_reread = False
+        self._libs_shown = None
         self.close_btn = GlyphButton("close", 36, boxed=True)
         self.close_btn.setToolTip("Close (Esc)")
         self.close_btn.clicked.connect(self.closeRequested.emit)
@@ -111,71 +150,159 @@ class SettingsPage(QWidget):
         title_row.addWidget(self.close_btn, 0, Qt.AlignTop)
         outer.addLayout(title_row)
 
+        # ---- Page tabs (v0.23.0): the three settings pages on the left, About on its own at the right
+        nav = QHBoxLayout()
+        nav.setSpacing(12)
+        self.nav_ctl = SegmentedControl(
+            [(self.PAGE_PREFERENCES, "Preferences"), (self.PAGE_DOWNLOADS, "Download Settings"),
+             (self.PAGE_USER, "User Data && Installation")],
+            self.PAGE_PREFERENCES)
+        self.nav_ctl.changed.connect(self.show_page)
+        nav.addWidget(self.nav_ctl, 0, Qt.AlignVCenter)
+        nav.addStretch(1)
+        self.about_ctl = SegmentedControl([(self.PAGE_ABOUT, "About")], "")
+        self.about_ctl.changed.connect(self.show_page)
+        nav.addWidget(self.about_ctl, 0, Qt.AlignVCenter)
+        outer.addLayout(nav)
+
+        self.pages = QStackedWidget()
+        outer.addWidget(self.pages, 1)
+        self._page_index = {}
+
+        # ---- Preferences
+        col = self._add_page(self.PAGE_PREFERENCES)
+        self._add_group(col, "visuals", "Visuals", "How the app looks, and how its lists move.", [
+            self._row_panel(
+                "Appearance", "Dark gray is the default. Switch to a light look any time.",
+                self._make_theme_control()),
+            # v0.17.4, Checklist item 55
+            self._row_panel(
+                "Smooth scrolling", "Lists glide when you scroll with the mouse wheel or keyboard, and when an "
+                "opened playlist is brought into view. Off, they jump straight there. Applies at once.",
+                self._make_smooth_scroll_control()),
+        ])
+        # v0.23.2: grouped as Other (were ungrouped in v0.23.0-v0.23.1)
+        self._add_group(col, "other", "Other", "The CMD button, the check at launch and the debug window.", [
+            self._row_panel(
+                "CMD button", "What the CMD button opens: a console window inside the app, or a real terminal "
+                "running the classic menu.",
+                self._make_cmd_control()),
+            # v0.16.17
+            self._row_panel(
+                "Scan on launch", "Check every playlist against Spotify / YouTube each time the app opens. "
+                "Off, the last known numbers are shown until you run a Scan or Sync. Takes effect next launch.",
+                self._make_launch_scan_control()),
+            # v0.16.3
+            self._row_panel(
+                "Debug window",
+                "Shows the app’s live log and printed output in a real console window"
+                if ui_debug.uses_real_console() else
+                "Shows the app’s live log and printed output in a window",
+                self._make_debug_control()),
+        ])
+        col.addStretch(1)
+
+        # ---- Download Settings (v0.23.2: one group, Download Settings)
+        col = self._add_page(self.PAGE_DOWNLOADS)
+        self._add_group(col, "download", "Download Settings",
+                        "How songs are found and downloaded, for every playlist.", [
+            # v0.17.7, Checklist item 58
+            self._row_panel(
+                "Prefer explicit versions", "When a song has both an explicit and a clean version on YouTube, "
+                "download the explicit one. Off, the usual search decides. Applies to songs downloaded from now "
+                "on; songs already downloaded are kept (fix one with an exception).",
+                self._make_explicit_control()),
+            self._make_cookies_panel(),    # v0.16.42, Checklist item 48
+            self._make_download_panel(),   # v0.16.44, Checklist item 39
+        ])
+        col.addStretch(1)
+
+        # ---- User Data & Installation
+        col = self._add_page(self.PAGE_USER)
+        self._add_group(col, "user_data", "User Data",
+                        "Your keys, your Music folder, and a backup of everything you've set up.", [
+            # v0.16.26, Checklist item 27 part 5
+            self._row_panel(
+                "Keyboard", "Change the keys for the Main Menu, the Edit page and the other menus. "
+                "Press Tab anywhere to see the current keys.",
+                self._make_remap_control()),
+            self._make_folder_panel(),
+            self._make_data_panel(),   # v0.17.8, Checklist item 59; data folder v0.18.1
+        ])
+        self._add_group(col, "install", "User Installation",
+                        "This copy of Mud Music Manager: its updates, and the libraries and programs it runs on.", [
+            self._make_updates_panel(),
+            self._make_libraries_panel(),
+        ])
+        col.addStretch(1)
+
+        # ---- About (v0.17.1, Checklist item 52; its own page since v0.23.0)
+        col = self._add_page(self.PAGE_ABOUT)
+        col.addWidget(self._make_about_panel())
+        col.addStretch(1)
+
+        # v0.23.1: Project libraries and the components line are read in the
+        # background each time Settings opens (refresh_installation()), not here.
+        self.refresh()
+
+    # ---- pages and groups (v0.23.0) -------------------------------------------
+    def _add_page(self, key: str) -> QVBoxLayout:
+        """A page in its own scroll area; returns the column to fill."""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        outer.addWidget(scroll, 1)
+        # The panels wrap their text, so this only shows if the sheet is ever too
+        # narrow for a row's controls: they scroll into view instead of being cut off.
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         host = QWidget()
         col = QVBoxLayout(host)
         col.setContentsMargins(0, 0, 8, 0)
         col.setSpacing(16)
         scroll.setWidget(host)
         smooth_scroll(scroll)  # v0.17.0
+        self._page_index[key] = self.pages.addWidget(scroll)
+        return col
 
-        # ---- Appearance
-        col.addWidget(self._row_panel(
-            "Appearance", "Dark gray is the default. Switch to a light look any time.",
-            self._make_theme_control()))
+    @staticmethod
+    def _add_group(col: QVBoxLayout, icon: str, title: str, text: str, panels) -> None:
+        """A titled group: its icon, name and a line about it, then its panels."""
+        head = QHBoxLayout()
+        head.setSpacing(12)
+        head.setContentsMargins(4, 6, 0, 0)
+        head.addWidget(GroupIcon(icon, 36), 0, Qt.AlignVCenter)
+        words = QVBoxLayout()
+        words.setSpacing(0)
+        name = QLabel(title)
+        name.setProperty("role", "h2")
+        words.addWidget(name)
+        sub = QLabel(text)
+        sub.setProperty("role", "muted")
+        sub.setWordWrap(True)
+        words.addWidget(sub)
+        head.addLayout(words, 1)
+        col.addLayout(head)
+        box = QVBoxLayout()
+        box.setSpacing(12)
+        for p in panels:
+            box.addWidget(p)
+        col.addLayout(box)
+        col.addSpacing(30)  # v0.23.1: a clear gap before what follows (was 10)
 
-        # ---- Scan on launch (v0.16.17)
-        col.addWidget(self._row_panel(
-            "Scan on launch", "Check every playlist against Spotify / YouTube each time the app opens. "
-            "Off, the last known numbers are shown until you run a Scan or Sync. Takes effect next launch.",
-            self._make_launch_scan_control()))
+    def show_page(self, key: str) -> None:
+        if key not in self._page_index:
+            return
+        self.pages.setCurrentIndex(self._page_index[key])
+        if key == self.PAGE_ABOUT:
+            self.nav_ctl.clear_selection()
+            self.about_ctl.set_current(key)
+        else:
+            self.about_ctl.clear_selection()
+            self.nav_ctl.set_current(key)
 
-        # ---- Smooth scrolling (v0.17.4, Checklist item 55)
-        col.addWidget(self._row_panel(
-            "Smooth scrolling", "Lists glide when you scroll with the mouse wheel or keyboard, and when an "
-            "opened playlist is brought into view. Off, they jump straight there. Applies at once.",
-            self._make_smooth_scroll_control()))
+    def current_page_key(self) -> str:
+        return self.about_ctl.current() or self.nav_ctl.current() or self.PAGE_PREFERENCES
 
-        # ---- Prefer explicit versions (v0.17.7, Checklist item 58)
-        col.addWidget(self._row_panel(
-            "Prefer explicit versions", "When a song has both an explicit and a clean version on YouTube, "
-            "download the explicit one. Off, the usual search decides. Applies to songs downloaded from now on; "
-            "songs already downloaded are kept (fix one with an exception).",
-            self._make_explicit_control()))
-
-        # ---- Download quality (v0.16.44, Checklist item 39)
-        col.addWidget(self._make_download_panel())
-
-        # ---- YouTube sign-in (v0.16.42, Checklist item 48)
-        col.addWidget(self._make_cookies_panel())
-
-        # ---- CMD behaviour
-        col.addWidget(self._row_panel(
-            "CMD button", "What the CMD button opens: a console window inside the app, or a real terminal "
-            "running the classic menu.",
-            self._make_cmd_control()))
-
-        # ---- Debug window (v0.16.3)
-        col.addWidget(self._row_panel(
-            "Debug window",
-            "Shows the app’s live log and printed output in a real console window"
-            if ui_debug.uses_real_console() else
-            "Shows the app’s live log and printed output in a window",
-            self._make_debug_control()))
-
-        # ---- Keyboard (v0.16.26, Checklist item 27 part 5)
-        col.addWidget(self._row_panel(
-            "Keyboard", "Change the keys for the Main Menu, the Edit page and the other menus. "
-            "Press Tab anywhere to see the current keys.",
-            self._make_remap_control()))
-
-        # ---- Your data: export / import (v0.17.8, Checklist item 59), data folder (v0.18.1)
-        col.addWidget(self._make_data_panel())
-
-        # ---- Music folder
+    # ---- Music folder ----------------------------------------------------------
+    def _make_folder_panel(self) -> QWidget:
         folder = make_panel()
         fl = QVBoxLayout(folder)
         fl.setContentsMargins(22, 18, 22, 18)
@@ -186,9 +313,10 @@ class SettingsPage(QWidget):
         hint = QLabel("Change it from the main menu (Music Folder → Change).")
         hint.setProperty("role", "muted")
         fl.addWidget(hint)
-        col.addWidget(folder)
+        return folder
 
-        # ---- Updates
+    # ---- Updates ---------------------------------------------------------------
+    def _make_updates_panel(self) -> QWidget:
         upd = make_panel()
         ul = QHBoxLayout(upd)
         ul.setContentsMargins(22, 18, 22, 18)
@@ -224,11 +352,12 @@ class SettingsPage(QWidget):
         ubtns.addWidget(self.builtin_btn)
         ubtns.addStretch(1)
         ul.addLayout(ubtns)
-        col.addWidget(upd)
         self.components_label.setVisible(False)  # filled in when Settings opens (refresh())
         self.builtin_btn.setVisible(False)
+        return upd
 
-        # ---- Libraries
+    # ---- Project libraries -----------------------------------------------------
+    def _make_libraries_panel(self) -> QWidget:
         libs = make_panel()
         ll = QVBoxLayout(libs)
         ll.setContentsMargins(22, 18, 22, 18)
@@ -237,7 +366,7 @@ class SettingsPage(QWidget):
         head.addWidget(CapsLabel("Project libraries", muted=True))
         head.addStretch(1)
         refresh = make_button("Refresh", "ghost", compact=True)
-        refresh.clicked.connect(lambda: self.refresh_libraries(include_tools=True, reread_tools=True))
+        refresh.clicked.connect(lambda: self.refresh_installation(reread_tools=True))
         head.addWidget(refresh)
         ll.addLayout(head)
         sub = QLabel("Where each library from requirements.txt is installed on this computer, and the Deno and "
@@ -246,6 +375,10 @@ class SettingsPage(QWidget):
         sub.setProperty("role", "muted")
         sub.setWordWrap(True)
         ll.addWidget(sub)
+        self.libs_status = QLabel("Reading the installed libraries…")  # v0.23.1: until the first read ends
+        self.libs_status.setProperty("role", "faint")
+        self.libs_status.setWordWrap(True)
+        ll.addWidget(self.libs_status)
         self.libs_box = QVBoxLayout()
         self.libs_box.setSpacing(8)
         ll.addLayout(self.libs_box)
@@ -253,15 +386,12 @@ class SettingsPage(QWidget):
         self.env_label.setProperty("role", "faint")
         self.env_label.setWordWrap(True)
         self.env_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # v0.23.0: its paths can't wrap (no spaces), so like the Data folder line it
+        # never widens Settings; the end of a long one is cut off (full text in the tooltip).
+        self.env_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.env_label.setMinimumWidth(1)
         ll.addWidget(self.env_label)
-        col.addWidget(libs)
-
-        # ---- About (v0.17.1, Checklist item 52)
-        col.addWidget(self._make_about_panel())
-        col.addStretch(1)
-
-        self.refresh_libraries(include_tools=False)  # Deno / FFmpeg added when Settings opens (v0.22.3)
-        self.refresh()
+        return libs
 
     # ------------------------------------------------------------------
     def _row_panel(self, title: str, text: str, control: QWidget):
@@ -662,8 +792,8 @@ class SettingsPage(QWidget):
         ui_dialogs.info(
             self.window(), "Data exported",
             f"Saved to:\n{path}\n\n{counts.describe()}, and your settings.\n\n"
-            "To use it on another computer, install Mud Music Manager there, then choose Settings → Your data → "
-            "Import… and pick this file. Your music files aren't in the backup: Sync downloads them again, "
+            "To use it on another computer, install Mud Music Manager there, then choose Settings → User Data & "
+            "Installation → Your data → Import… and pick this file. Your music files aren't in the backup: Sync downloads them again, "
             "or copy your Music folder across too.")
 
     def _import_data(self) -> None:
@@ -735,7 +865,8 @@ class SettingsPage(QWidget):
                          f"them again.")
         if report.missing_cookie_file:
             lines.append(f"YouTube sign-in uses a cookies.txt file that isn't on this computer "
-                         f"({report.missing_cookie_file}). Choose it again under YouTube sign-in.")
+                         f"({report.missing_cookie_file}). Choose it again under Download Settings → "
+                         f"YouTube sign-in.")
         lines.append(f"Your data from before the import is saved in:\n{report.safety_copy}")
         return "\n\n".join(lines)
 
@@ -767,9 +898,11 @@ class SettingsPage(QWidget):
         super().hideEvent(e)
 
     def key_default(self):
-        """Keyboard (v0.16.24): the first key lands on the current theme
-        choice, the first setting."""
-        return self.theme_ctl._buttons.get(ui_settings.get("theme"))
+        """Keyboard (v0.16.24): the first key lands on the tab of the page
+        showing (v0.23.0; it was the theme choice, the first setting)."""
+        key = self.current_page_key()
+        ctl = self.about_ctl if key == self.PAGE_ABOUT else self.nav_ctl
+        return ctl._buttons.get(key)
 
     def _theme_picked(self, name: str) -> None:
         self.ctx.apply_theme(name)
@@ -792,24 +925,92 @@ class SettingsPage(QWidget):
     def set_update_message(self, text: str) -> None:
         self.update_label.setText(text)
 
-    # ---- Components (v0.22.0, Checklist item 60g) -------------------------------
-    def refresh_components(self) -> None:
-        """The versions of yt-dlp / yt-dlp-ejs / Deno / FFmpeg in use (packaged
-        app only; from source, pip and the PC's own tools are used)."""
+    # ---- Components and Project libraries, read in the background (v0.23.1) -------
+    # Reading them took ~0.6 s on the GUI thread every time Settings opened
+    # (package metadata ~0.45 s; deno / ffmpeg run for their versions ~0.1 s),
+    # so the app froze before the sheet appeared. Now Settings opens at once
+    # and the two panels fill in when the read finishes.
+    def refresh_installation(self, reread_tools: bool = False) -> None:
+        """Read the components line and the Project libraries list off the GUI
+        thread, then show them. reread_tools: run deno / ffmpeg again for the
+        libraries list (Refresh) instead of using this session's answer."""
+        backend = getattr(self.ctx, "backend", None)
+        if backend is None:  # no worker threads (e.g. a test): read here
+            self._show_installation(self._read_installation(reread_tools))
+            return
+        if self._install_reading:
+            self._install_again = True  # read once more when this one ends
+            self._install_reread = self._install_reread or reread_tools
+            return
+        self._install_reading = True
+        thread = backend.run(lambda _t: self._read_installation(reread_tools), heavy=False)
+        # Bound methods, so the answer is handled on the GUI thread.
+        thread.resultReady.connect(self._on_installation_read)
+        thread.failed.connect(self._on_installation_failed)
+
+    @staticmethod
+    def _read_installation(reread_tools: bool) -> dict:
+        """Runs on a worker thread: no Qt here."""
         on = component_updates.enabled()
+        lines = []
+        if on:
+            try:
+                lines = component_updates.describe()
+            except Exception as e:
+                lines = [f"Couldn't read the component versions ({type(e).__name__})."]
+        return {
+            "components_on": on,
+            "components": lines,
+            "state": component_updates.load_state() if on else {},
+            "libs": ui_libraries.describe_all(include_tools=False) + ui_libraries.describe_tools(refresh=reread_tools),
+            "env": ui_libraries.python_environment(),
+        }
+
+    def _on_installation_read(self, result: dict) -> None:
+        self._install_reading = False
+        self._show_installation(result)
+        self._read_again_if_asked()
+
+    def _on_installation_failed(self, message: str) -> None:
+        self._install_reading = False
+        if self._libs_shown is None:
+            self.libs_status.setText(f"Couldn't read the installed libraries ({message}).")
+            _set_role(self.libs_status, "bad")
+        self._read_again_if_asked()
+
+    def _read_again_if_asked(self) -> None:
+        if self._install_again:
+            reread = self._install_reread
+            self._install_again = self._install_reread = False
+            self.refresh_installation(reread_tools=reread)
+
+    def _show_installation(self, r: dict) -> None:
+        # Components (v0.22.0, Checklist item 60g): the versions of yt-dlp /
+        # yt-dlp-ejs / Deno / FFmpeg in use and where they come from.
+        on = r["components_on"]
         self.components_label.setVisible(on)
         self.builtin_btn.setVisible(on)
-        if not on:
-            return
-        try:
-            lines = component_updates.describe()
-        except Exception as e:
-            lines = [f"Couldn't read the component versions ({type(e).__name__})."]
-        self.components_label.setText("Components: " + " · ".join(lines))
-        # v0.22.2: running from source the "built-in" versions are the PC's own copies
-        self.builtin_btn.setText("Use built-in versions" if app_paths.FROZEN else "Use this PC's versions")
-        state = component_updates.load_state()
-        self.builtin_btn.setEnabled(bool(state.get("active") or state.get("staged")) and not state.get("reset"))
+        if on:
+            self.components_label.setText("Components: " + " · ".join(r["components"]))
+            # v0.22.2: running from source the "built-in" versions are the PC's own copies
+            self.builtin_btn.setText("Use built-in versions" if app_paths.FROZEN else "Use this PC's versions")
+            state = r["state"]
+            self.builtin_btn.setEnabled(bool(state.get("active") or state.get("staged")) and not state.get("reset"))
+        # Project libraries (v0.22.3: ending with Deno and FFmpeg). The rows are
+        # only rebuilt when something changed, so reopening Settings doesn't flicker.
+        self.libs_status.hide()
+        if r["libs"] != self._libs_shown:
+            self._libs_shown = r["libs"]
+            while self.libs_box.count():
+                item = self.libs_box.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            for info in r["libs"]:
+                self.libs_box.addWidget(self._library_row(info))
+        env = r["env"]
+        self.env_label.setText(
+            f"Python {env['version']}  ·  {env['executable']}\nPackages folder: {env['site_packages']}")
+        self.env_label.setToolTip(self.env_label.text())
 
     def set_components_message(self, text: str) -> None:
         self.components_msg.setText(text)
@@ -826,25 +1027,9 @@ class SettingsPage(QWidget):
                 yes=label, no="Cancel"):
             return
         component_updates.reset_to_built_in()
-        self.refresh_components()
+        self.builtin_btn.setEnabled(False)  # the read below confirms it
+        self.refresh_installation()
         self.set_components_message(f"{which[0].upper()}{which[1:]} will be used from the next launch.")
-
-    def refresh_libraries(self, include_tools: bool = True, reread_tools: bool = False) -> None:
-        """v0.22.3: the list ends with Deno and FFmpeg (ui_libraries.describe_tools()).
-        Reading their versions runs them, so the page is first built without
-        them (at app start) and they're added when Settings opens."""
-        while self.libs_box.count():
-            item = self.libs_box.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        for info in ui_libraries.describe_all(include_tools=False):
-            self.libs_box.addWidget(self._library_row(info))
-        if include_tools:
-            for info in ui_libraries.describe_tools(refresh=reread_tools):
-                self.libs_box.addWidget(self._library_row(info))
-        env = ui_libraries.python_environment()
-        self.env_label.setText(
-            f"Python {env['version']}  ·  {env['executable']}\nPackages folder: {env['site_packages']}")
 
     def _library_row(self, info) -> QWidget:
         box = make_panel("inputbox")

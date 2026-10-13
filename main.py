@@ -1434,8 +1434,9 @@ def _export_user_data():
     print(f"\nSaved to: {path}")
     print(f"  {counts.describe()}, and your settings.")
     print("To use it on another computer, install Mud Music Manager there, then choose Settings -> Import "
-          "(here, or Settings -> Your data -> Import... in the app) and give it this file. Your music files "
-          "aren't in the backup: Sync downloads them again, or copy your Music folder across too.")
+          "(here, or Settings -> User Data & Installation -> Your data -> Import... in the app) and give it this "
+          "file. Your music files aren't in the backup: Sync downloads them again, or copy your Music folder "
+          "across too.")
 
 
 def _import_user_data(config):
@@ -1443,8 +1444,9 @@ def _import_user_data(config):
         # The app keeps its settings in memory and saves them often (e.g.
         # after every scan), so it would write them back over the import.
         print("\nImport isn't available here while the graphical app is open: the app would write its own "
-              "settings back over the imported ones. Import from the app instead (Settings -> Your data -> "
-              "Import...), or close the app and run this menu on its own (python main.py --cli).")
+              "settings back over the imported ones. Import from the app instead (Settings -> User Data & "
+              "Installation -> Your data -> Import...), or close the app and run this menu on its own "
+              "(python main.py --cli).")
         return
     print("\nImport your data -- replaces the playlists, albums, artists, exceptions and settings here with a "
           "backup's. Your music files are not touched. Close the graphical app first if it is open.")

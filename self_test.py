@@ -38,6 +38,8 @@ PROJECT_MODULES = (
     "ytmusic_reader", "soundcloud_reader", "apple_music_reader", "amazon_music_reader", "acquisition_engine",
     "library_sync", "artist_watch", "dependency_checker", "ui_libraries",
 )
+# Libraries a project module imports only when first used (v0.23.3).
+LAZY_LIBRARIES = ("spotapi", "spotapi.http.request", "SpotipyFree", "SpotipyFree.Formatter", "syncedlyrics")
 GUI_MODULES = (
     "ui_theme", "ui_widgets", "ui_keys", "ui_dialogs", "ui_backend", "ui_main_page", "ui_edit_page",
     "ui_settings_page", "ui_results_page", "ui_remap", "ui_debug", "ui_cmd", "ui_app",
@@ -76,6 +78,10 @@ def run(download: bool = True) -> int:
 
     print("Modules")
     for name in PROJECT_MODULES:
+        r.attempt(name, lambda n=name: importlib.import_module(n) and None)
+    # v0.23.3: spotify_reader imports these on first use (faster launch), so
+    # importing it no longer proves they are in the build; check them here.
+    for name in LAZY_LIBRARIES:
         r.attempt(name, lambda n=name: importlib.import_module(n) and None)
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # no window is shown
     for name in GUI_MODULES:
