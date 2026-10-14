@@ -1,16 +1,11 @@
 # Mud Music Manager
 
-A desktop app (Python, PySide6) that keeps a local music folder in step with
+A desktop app (Python, PySide6) that keeps a local music folder in sync with
 a playlist or album on Spotify, YouTube, YT Music, SoundCloud, Apple Music or
 Amazon Music: new songs are added, removed songs are taken out, track numbers
 follow the playlist's order, and every file is tagged (title, artist, album,
 year, cover art, lyrics).
 
-## Requirements
-
-- Python 3 (developed and tested on Python 3.14, on Windows)
-- The libraries in `requirements.txt`: `pip install -r requirements.txt`
-- [FFmpeg](https://ffmpeg.org) on your PATH
 
 ## Running
 
