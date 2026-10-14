@@ -8,7 +8,7 @@
 
 </div>
 
-Mud Music Manager is a desktop app that keeps a local music folder in step with a playlist or album on
+Mud Music Manager is a desktop app that keeps a local music folder in sync with a playlist or album on
 **Spotify, YouTube, YT Music, SoundCloud, Apple Music or Amazon Music**: new songs are added, removed songs
 are taken out, track numbers follow the playlist's order, and every file is tagged (title, artist, album,
 year, cover art, lyrics). 
