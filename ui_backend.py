@@ -354,6 +354,26 @@ def read_local_tracks(folder, platform: str = config_manager.PLATFORM_SPOTIFY, w
     return tracks
 
 
+def device_copy_task(config: dict, entries: List[dict], dest: str, control: SyncControl) -> Callable:
+    """v0.26.0 (Checklist item 66): mirror the playlists to a folder on a
+    device (device_copy.copy()). Progress: 'done/total|line'; Pause / Cancel
+    between files (control.checkpoint()); DeviceCopyError -> failed."""
+    import device_copy
+    snap = _snapshot(config)
+
+    def fn(thread: TaskThread):
+        playlists = []
+        for entry in entries:
+            try:
+                playlists.append((entry["folder_name"], config_manager.get_playlist_folder(snap, entry)))
+            except ValueError as e:
+                logger.log_event(f"Copy to device: skipped '{entry['folder_name']}': {e}")
+        return device_copy.copy(
+            dest, playlists, checkpoint=control.checkpoint,
+            on_progress=lambda text, done, total: thread.progress.emit(f"{done}/{total}|{text}"))
+    return fn
+
+
 def compute_local_stats(entry: dict, folder) -> dict:
     tracks = read_local_tracks(folder, config_manager.get_playlist_platform(entry), with_thumbs=False)
     exceptions = exceptions_manager.list_exceptions(config_manager.get_playlist_source_id(entry))

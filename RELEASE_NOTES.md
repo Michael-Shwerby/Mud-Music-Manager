@@ -2,6 +2,21 @@
 
 What changed in each version, newest first.
 
+## v0.27.0 (2026-10-14)
+- **Support Mud Music Manager:** a glowing heart button in the bottom right of the Main Menu opens a short note from the developer, with a link to his Ko-fi page if you'd like to support the project. It's also in Settings → About (Support Mud Music Manager). Mud Music Manager stays free.
+
+## v0.26.0 (2026-10-13)
+- **Copy to Device:** a new button on the Main Menu copies the playlists you tick to a USB stick, SD card or phone folder. The device then matches your library: new songs are copied, songs removed from a playlist are removed there too, and nothing else on the device is touched. Each later copy only copies what changed.
+
+## v0.25.0 (2026-10-13)
+- **Scheduled sync:** your playlists can sync themselves every day at a time you choose, even when the app is closed, with a Windows notification when it's done. Off by default: turn it on in Settings → Download Settings → Scheduled Sync. If the app is open at that time, it runs the sync itself.
+
+## v0.24.0 (2026-10-13)
+- **Playlist files:** every Sync now saves a playlist file (`.m3u8`) in each playlist's folder, with the songs in the playlist's order, so other music players (VLC, foobar2000, MusicBee, Plex, Jellyfin, Poweramp…) show your playlists exactly as they are. Turn it off in Settings → User Data → Playlist files. Playlist files you made yourself are never changed.
+
+## v0.23.4 (2026-10-13)
+- Behind-the-scenes tidy-up: the Main Menu and Edit page code is organised into smaller files. Nothing looks or works differently.
+
 ## v0.23.3 (2026-10-13)
 - The app opens faster: about 1–1.5 seconds quicker. The Spotify and lyrics libraries now load the first time they're needed, not at launch, and the playlist list is built once instead of twice.
 

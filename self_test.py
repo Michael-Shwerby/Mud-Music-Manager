@@ -36,12 +36,15 @@ PROJECT_MODULES = (
     "track_failures", "ui_settings", "user_data", "download_settings", "youtube_cookies", "downloader",
     "metadata_tagger", "lyrics_provider", "youtube_matcher", "spotify_reader", "youtube_playlist_reader",
     "ytmusic_reader", "soundcloud_reader", "apple_music_reader", "amazon_music_reader", "acquisition_engine",
-    "library_sync", "artist_watch", "dependency_checker", "ui_libraries",
+    "library_sync", "playlist_file", "scheduled_sync", "device_copy", "artist_watch", "dependency_checker", "ui_libraries",
 )
 # Libraries a project module imports only when first used (v0.23.3).
 LAZY_LIBRARIES = ("spotapi", "spotapi.http.request", "SpotipyFree", "SpotipyFree.Formatter", "syncedlyrics")
 GUI_MODULES = (
-    "ui_theme", "ui_widgets", "ui_keys", "ui_dialogs", "ui_backend", "ui_main_page", "ui_edit_page",
+    "ui_theme", "ui_widgets", "ui_keys", "ui_dialogs", "ui_backend",
+    # v0.23.4: the Main Menu and Edit page are split over several modules
+    "ui_main_rows", "ui_sync_panel", "ui_main_runs", "ui_main_keys", "ui_main_page",
+    "ui_edit_rows", "ui_edit_player", "ui_edit_keys", "ui_edit_page",
     "ui_settings_page", "ui_results_page", "ui_remap", "ui_debug", "ui_cmd", "ui_app",
 )
 
@@ -91,6 +94,7 @@ def run(download: bool = True) -> int:
     r.attempt("QtWidgets / QtGui", lambda: importlib.import_module("PySide6.QtWidgets") and None)
     r.attempt("QtMultimedia (Edit page player)", lambda: importlib.import_module("PySide6.QtMultimedia") and None)
     r.check("app icon file", os.path.isfile(app_info.ICON_ICO_PATH), app_info.ICON_ICO_PATH)
+    r.check("Ko-fi logo file", os.path.isfile(app_info.KOFI_ICON_PATH), app_info.KOFI_ICON_PATH)  # v0.27.0
     r.check("licence texts", os.path.isfile(app_info.LICENSE_PATH) and os.path.isfile(app_info.THIRD_PARTY_PATH))
 
     print("\nTools")

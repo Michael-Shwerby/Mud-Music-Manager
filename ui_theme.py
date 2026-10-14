@@ -67,6 +67,7 @@ class Palette:
     scroll_handle: str
     overlay: str         # translucent dim used over thumbnails
     scrim: str           # dim painted over the window behind the overlay sheet (v0.16.13)
+    heart: str           # the Support button's lit heart and the Support window's big link (v0.27.0)
 
 
 DARK = Palette(
@@ -86,7 +87,7 @@ DARK = Palette(
     info_bg="#12384a", info_text="#58cdea",
     danger_bg="#2b1822", danger_border="#5a2b3c", danger_text="#f08ea0",
     link="#4fc3f7", scroll_handle="#3a4768", overlay="#99050a16",
-    scrim="#a8010409",
+    scrim="#a8010409", heart="#ff5a7a",
 )
 
 LIGHT = Palette(
@@ -106,7 +107,7 @@ LIGHT = Palette(
     info_bg="#d9f1f8", info_text="#0a6f8a",
     danger_bg="#fdecef", danger_border="#efb3be", danger_text="#b3203d",
     link="#0a7fa8", scroll_handle="#b9c4d8", overlay="#99ffffff",
-    scrim="#700f1b2e",
+    scrim="#700f1b2e", heart="#e0284f",
 )
 
 _PALETTES = {"dark": DARK, "light": LIGHT}
@@ -189,7 +190,7 @@ QFrame#row {
     border: 1px solid $row_border; border-radius: 14px;
 }
 /* v0.17.0: an open bar's look (row_exp1 / row_exp2 / row_exp_border) is
-   painted by the bar itself (ui_main_page.paint_open_bar), so it can blend
+   painted by the bar itself (ui_main_rows.paint_open_bar), so it can blend
    in as the bar opens. */
 QFrame#row[pick="true"]:hover { border: 1px solid $danger_text; }
 QFrame#bar {
@@ -235,6 +236,19 @@ QPushButton[variant="accent"] {
     background: $info_bg; color: $info_text; border: 1px solid $accent;
 }
 QPushButton[variant="accent"]:hover { background: $btn_hover; }
+/* v0.27.0: the Support window's Ko-fi link (a pill) and its big "Support MMM" button */
+QPushButton[variant="link"] {
+    background: $panel_bg; border: 1px solid $panel_border; color: $link;
+    padding: 7px 22px 7px 14px; font-size: 15px; font-weight: 600; border-radius: 22px;
+}
+QPushButton[variant="link"]:hover { border: 1px solid $link; text-decoration: underline; }
+QPushButton[variant="support"] {
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 $heart, stop:1 $accent2);
+    border: 1px solid transparent; color: #ffffff;
+    padding: 14px 40px; font-size: 26px; font-weight: 800; border-radius: 30px;
+}
+QPushButton[variant="support"]:hover { border: 2px solid #ffffff; }
+QPushButton[variant="support"]:pressed { background: $heart; }
 QPushButton[compact="true"] { padding: 4px 12px; font-size: 12px; border-radius: 8px; }
 QPushButton[large="true"] { padding: 10px 22px; font-size: 15px; font-weight: 600; border-radius: 10px; }
 QPushButton[segment="true"] {
@@ -250,6 +264,13 @@ QLineEdit {
     padding: 7px 10px; selection-background-color: $accent; selection-color: $on_accent;
 }
 QLineEdit:focus { border: 1px solid $accent; }
+/* v0.25.0: the Scheduled sync time (QTimeEdit) looks like the text fields */
+QTimeEdit {
+    background: $input_bg; border: 1px solid $input_border; border-radius: 9px;
+    padding: 6px 10px; min-width: 64px; selection-background-color: $accent; selection-color: $on_accent;
+}
+QTimeEdit:focus { border: 1px solid $accent; }
+QTimeEdit::up-button, QTimeEdit::down-button { width: 0px; border: none; }
 QLineEdit[flat="true"] { background: transparent; border: 1px solid transparent; padding: 2px 4px; }
 QLineEdit[flat="true"]:hover { border: 1px solid $input_border; }
 QLineEdit[flat="true"]:focus { background: $input_bg; border: 1px solid $accent; }

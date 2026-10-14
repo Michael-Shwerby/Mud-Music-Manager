@@ -48,6 +48,8 @@ v0.18.2: that path can be selected and copied (drag, or right-click → Copy).
 v0.17.1: About (Checklist item 52), the last panel: the logo, name,
 version, copyright and trademark lines, the platform disclaimer, and
 License / Third-party notices buttons (LICENSE.txt, THIRD_PARTY_NOTICES.txt).
+v0.27.0: under the About panel, a Support Mud Music Manager button opens
+the Support window (ui_dialogs.SupportDialog), as the Main Menu's heart does.
 
 v0.23.0 (Michael's request): the settings are split into pages, picked
 with tabs under the title (show_page()), each page its own scroll area:
@@ -69,6 +71,14 @@ read as separate. The components line and Project libraries are read on
 a worker thread each time Settings opens (refresh_installation()); done
 on the GUI thread they froze the app ~0.6 s before the sheet appeared.
 
+v0.24.0: Playlist files (On / Off, Checklist item 64), in the User Data
+group under Music folder (ui_settings "playlist_files", read by
+playlist_file.py at each Sync).
+
+v0.25.0: Scheduled sync (Checklist item 65), its own group (clock icon)
+on the Download Settings page: On / Off, the time, the notification,
+Try it now, and the last run (scheduled_sync.py).
+
 v0.23.2 (Michael's change of mind): every setting is now in a group.
 Preferences' CMD button, Scan on launch and Debug window are the Other
 group; the Download Settings page's three are one group, Download
@@ -77,10 +87,11 @@ Settings. Both have icons (ui_widgets.GroupIcon 'other', 'download').
 
 import os
 
-from PySide6.QtCore import QPoint, QStandardPaths, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QPoint, QStandardPaths, Qt, QTime, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QMenu, QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QLabel, QMenu, QScrollArea, QSizePolicy, QStackedWidget, QTimeEdit, QVBoxLayout,
+    QWidget,
 )
 
 import app_info
@@ -88,6 +99,7 @@ import app_paths
 import component_updates
 import config_manager
 import download_settings
+import scheduled_sync
 import ui_debug
 import ui_dialogs
 import ui_libraries
@@ -215,6 +227,11 @@ class SettingsPage(QWidget):
             self._make_cookies_panel(),    # v0.16.42, Checklist item 48
             self._make_download_panel(),   # v0.16.44, Checklist item 39
         ])
+        # v0.25.0, Checklist item 65
+        self._add_group(col, "clock", "Scheduled Sync",
+                        "Sync every playlist once a day, even when the app is closed.", [
+            self._make_schedule_panel(),
+        ])
         col.addStretch(1)
 
         # ---- User Data & Installation
@@ -227,6 +244,12 @@ class SettingsPage(QWidget):
                 "Press Tab anywhere to see the current keys.",
                 self._make_remap_control()),
             self._make_folder_panel(),
+            # v0.24.0, Checklist item 64
+            self._row_panel(
+                "Playlist files", "Each Sync saves a playlist file (.m3u8) in the playlist's folder, with the "
+                "songs in the playlist's order, so other music players show the playlist as it is. Off, the "
+                "app's playlist files are removed at each playlist's next Sync.",
+                self._make_playlist_files_control()),
             self._make_data_panel(),   # v0.17.8, Checklist item 59; data folder v0.18.1
         ])
         self._add_group(col, "install", "User Installation",
@@ -239,6 +262,12 @@ class SettingsPage(QWidget):
         # ---- About (v0.17.1, Checklist item 52; its own page since v0.23.0)
         col = self._add_page(self.PAGE_ABOUT)
         col.addWidget(self._make_about_panel())
+        # v0.27.0: the same Support window as the Main Menu's heart button
+        self.support_btn = make_button("Support Mud Music Manager", "primary", large=True)
+        self.support_btn.setToolTip("A note from the developer, and a link to his Ko-fi page")
+        self.support_btn.clicked.connect(lambda: ui_dialogs.SupportDialog(self.window()).exec())
+        col.addSpacing(6)
+        col.addWidget(self.support_btn, 0, Qt.AlignLeft)
         col.addStretch(1)
 
         # v0.23.1: Project libraries and the components line are read in the
@@ -443,6 +472,108 @@ class SettingsPage(QWidget):
     @staticmethod
     def _explicit_key() -> str:
         return "on" if ui_settings.get("prefer_explicit") else "off"
+
+    def _make_playlist_files_control(self):
+        self.playlist_files_ctl = SegmentedControl([("on", "On"), ("off", "Off")], self._playlist_files_key())
+        self.playlist_files_ctl.changed.connect(lambda k: ui_settings.set_value("playlist_files", k == "on"))
+        return self.playlist_files_ctl
+
+    @staticmethod
+    def _playlist_files_key() -> str:
+        return "off" if ui_settings.get("playlist_files") is False else "on"
+
+    # ---- Scheduled sync (v0.25.0, Checklist item 65) -----------------------
+    def _make_schedule_panel(self) -> QWidget:
+        p = make_panel()
+        lay = QVBoxLayout(p)
+        lay.setContentsMargins(22, 18, 22, 18)
+        lay.setSpacing(10)
+        top = QHBoxLayout()
+        top.setSpacing(18)
+        words = QVBoxLayout()
+        words.setSpacing(2)
+        words.addWidget(CapsLabel("Scheduled sync", muted=True))
+        d = QLabel("Every day at the time you choose, every playlist is synced, as Sync Now with all of them "
+                   "ticked, and watched artists' new releases are added. It runs even when the app is closed "
+                   "(a Windows scheduled task, while you're signed in to Windows); if the app is open, the app "
+                   "runs it. A sync missed while the PC was off runs when it's next on.")
+        d.setProperty("role", "muted")
+        d.setWordWrap(True)
+        words.addWidget(d)
+        top.addLayout(words, 1)
+        self.schedule_ctl = SegmentedControl([("on", "On"), ("off", "Off")], "off")
+        self.schedule_ctl.changed.connect(lambda k: self._schedule_changed(enabled=k == "on"))
+        top.addWidget(self.schedule_ctl, 0, Qt.AlignVCenter)
+        lay.addLayout(top)
+
+        self.schedule_row = QWidget()
+        row = QHBoxLayout(self.schedule_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(12)
+        row.addWidget(CapsLabel("Time", muted=True), 0, Qt.AlignVCenter)
+        self.schedule_time = QTimeEdit()
+        self.schedule_time.setDisplayFormat("HH:mm")
+        self.schedule_time.setToolTip("When the sync runs each day")
+        self.schedule_time.editingFinished.connect(self._schedule_time_edited)
+        row.addWidget(self.schedule_time, 0, Qt.AlignVCenter)
+        row.addSpacing(18)
+        row.addWidget(CapsLabel("Notification", muted=True), 0, Qt.AlignVCenter)
+        self.schedule_notify_ctl = SegmentedControl([("on", "On"), ("off", "Off")], "on")
+        self.schedule_notify_ctl.setToolTip("A Windows notification when the scheduled sync finishes")
+        self.schedule_notify_ctl.changed.connect(lambda k: self._schedule_changed(notify=k == "on", task=False))
+        row.addWidget(self.schedule_notify_ctl, 0, Qt.AlignVCenter)
+        row.addStretch(1)
+        self.schedule_try_btn = make_button("Try it now", "ghost", compact=True)
+        self.schedule_try_btn.setToolTip("Run the scheduled sync now in this window, with its notification")
+        self.schedule_try_btn.clicked.connect(self._schedule_try)
+        row.addWidget(self.schedule_try_btn, 0, Qt.AlignVCenter)
+        lay.addWidget(self.schedule_row)
+
+        self.schedule_status = QLabel("")
+        self.schedule_status.setProperty("role", "muted")
+        self.schedule_status.setWordWrap(True)
+        lay.addWidget(self.schedule_status)
+        self._schedule_error = None
+        self._sync_schedule_controls()
+        return p
+
+    def _sync_schedule_controls(self) -> None:
+        s = scheduled_sync.get_setting()
+        ok = scheduled_sync.supported()
+        self.schedule_ctl.set_current("on" if s["enabled"] else "off")
+        self.schedule_ctl.setEnabled(ok)
+        h, m = (int(x) for x in s["time"].split(":"))
+        self.schedule_time.blockSignals(True)
+        self.schedule_time.setTime(QTime(h, m))
+        self.schedule_time.blockSignals(False)
+        self.schedule_notify_ctl.set_current("on" if s["notify"] else "off")
+        self.schedule_row.setVisible(ok and s["enabled"])
+        if not ok:
+            self.schedule_status.setText("Scheduled sync is only available on Windows.")
+            _set_role(self.schedule_status, "muted")
+        elif self._schedule_error:
+            self.schedule_status.setText(f"Couldn't update the Windows scheduled task: {self._schedule_error}")
+            _set_role(self.schedule_status, "bad")
+        else:
+            lead = f"On: {scheduled_sync.describe(s)}. " if s["enabled"] else ""
+            self.schedule_status.setText(lead + scheduled_sync.last_result_text())
+            _set_role(self.schedule_status, "muted")
+
+    def _schedule_changed(self, task: bool = True, **changes) -> None:
+        scheduled_sync.set_setting(**changes)
+        if task:
+            self._schedule_error = scheduled_sync.apply()
+        self._sync_schedule_controls()
+
+    def _schedule_time_edited(self) -> None:
+        at = self.schedule_time.time().toString("HH:mm")
+        if at != scheduled_sync.get_setting()["time"]:
+            self._schedule_changed(time=at)
+
+    def _schedule_try(self) -> None:
+        window = getattr(self.ctx, "window", None)
+        if window is not None:
+            window.run_scheduled_sync()
 
     # ---- Download quality (v0.16.44) -------------------------------------
     _DOWNLOAD_HINTS = {
@@ -917,9 +1048,11 @@ class SettingsPage(QWidget):
         self.launch_scan_ctl.set_current(self._launch_scan_key())
         self.smooth_scroll_ctl.set_current(self._smooth_scroll_key())
         self.explicit_ctl.set_current(self._explicit_key())
+        self.playlist_files_ctl.set_current(self._playlist_files_key())
         self.cmd_ctl.set_current(ui_settings.get("cmd_mode"))
         self._sync_download_controls()
         self._sync_cookie_controls()
+        self._sync_schedule_controls()  # v0.25.0
         self._sync_debug_button()
 
     def set_update_message(self, text: str) -> None:

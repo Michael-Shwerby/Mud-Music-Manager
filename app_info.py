@@ -16,6 +16,8 @@ Brand images (Checklist item 52), all in assets/:
     button.
   - app_icon.ico: the same emblem pre-rendered at 16-256 px, for Windows
     shortcuts and any future .exe build.
+  - kofi_symbol.png (v0.27.0): Ko-fi's own cup logo (their brand asset,
+    unchanged), shown beside the Ko-fi link in the Support window.
 
 v0.18.0: VERSION lives here (was main.py's), so there is one version
 number for the whole app; main.VERSION is kept as the same value. The
@@ -30,11 +32,13 @@ import app_paths
 APP_NAME = "Mud Music Manager"
 # The one version number (MAJOR.MINOR.PATCH). It must match the GitHub
 # release tag (v0.18.0) and the version in the three project documents.
-VERSION = "0.23.3"
+VERSION = "0.27.0"
 # Where releases are published (v0.19.0, app_update.py). The new-version
 # check reads this repository's latest GitHub release; it needs the
 # repository to be public (a private one looks like it has no release).
 GITHUB_REPO = "Michael-Shwerby/Mud-Music-Manager"
+# v0.27.0: Michael's Ko-fi page, opened by the Main Menu's Support window.
+KOFI_URL = "https://ko-fi.com/michaelshwerby"
 OWNER = "Michael Xuereb"
 COPYRIGHT_YEAR = "2026"
 # v0.17.5 (Checklist item 56): open source under GPL-3.0-or-later (was "All rights reserved").
@@ -60,6 +64,7 @@ LOGO_DARK_PATH = os.path.join(ASSETS_DIR, "logo_dark.png")
 LOGO_LIGHT_PATH = os.path.join(ASSETS_DIR, "logo_light.png")
 ICON_PNG_PATH = os.path.join(ASSETS_DIR, "app_icon.png")
 ICON_ICO_PATH = os.path.join(ASSETS_DIR, "app_icon.ico")
+KOFI_ICON_PATH = os.path.join(ASSETS_DIR, "kofi_symbol.png")
 LICENSE_PATH = os.path.join(BASE_DIR, "LICENSE.txt")
 THIRD_PARTY_PATH = os.path.join(BASE_DIR, "THIRD_PARTY_NOTICES.txt")
 

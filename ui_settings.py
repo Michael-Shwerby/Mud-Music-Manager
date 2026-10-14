@@ -51,6 +51,19 @@ files stay exactly as they were -- the GUI never adds keys to them):
     song's explicit version over its clean one when both are found. Read
     by the engine (youtube_matcher.prefer_explicit()), so terminal-menu
     syncs use it too.
+  - playlist_files (v0.24.0, Checklist item 64): Settings -> Playlist
+    files (default True). On, every Sync writes the playlist's .m3u8 in
+    its folder; Off, the app's .m3u8 files are removed at each playlist's
+    next Sync. Read by the engine (playlist_file.enabled()), so
+    terminal-menu syncs use it too.
+  - scheduled_sync (v0.25.0, Checklist item 65): Settings -> Scheduled
+    sync, {enabled (default False), time "HH:MM" (default "03:00"),
+    notify (default True)}; scheduled_sync.get_setting() checks the
+    values. scheduled_sync_last: the last run's {at, summary, ok, in_app}
+    (this computer only, like sync_timing).
+  - device_copy_last (v0.26.0, Checklist item 66): the folder Copy to
+    Device last copied to, where its folder picker starts (this computer
+    only).
 
 Export / Import (v0.17.8, Checklist item 59): export_values() and
 import_values() give user_data.py every setting and replace them all at
@@ -106,6 +119,10 @@ _DEFAULTS = {
     "scan_on_launch": True,
     "smooth_scroll": True,
     "prefer_explicit": False,
+    "playlist_files": True,
+    "scheduled_sync": {"enabled": False, "time": "03:00", "notify": True},
+    "scheduled_sync_last": None,
+    "device_copy_last": "",
     "keymap": {},
     "youtube_cookies": {"mode": "off", "browser": "firefox", "file": ""},
     "edit_sections_collapsed": {},
@@ -151,8 +168,10 @@ def _load() -> dict:
         merged["smooth_scroll"] = True
     if not isinstance(merged["prefer_explicit"], bool):
         merged["prefer_explicit"] = False
+    if not isinstance(merged["playlist_files"], bool):
+        merged["playlist_files"] = True
     for key in ("playlist_icons", "playlist_cache", "keymap", "youtube_cookies", "edit_sections_collapsed",
-                "download_settings", "sync_timing"):
+                "download_settings", "sync_timing", "scheduled_sync"):
         if not isinstance(merged[key], dict):
             merged[key] = {}
     _data = merged

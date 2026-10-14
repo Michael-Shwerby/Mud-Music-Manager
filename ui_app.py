@@ -44,6 +44,7 @@ it and closes the app; the installer reopens it (_start_app_update()).
 import gc
 import os
 import sys
+import threading
 from typing import Callable, Optional
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
@@ -59,6 +60,7 @@ import config_manager
 import dependency_checker
 import exceptions_manager
 import logger
+import scheduled_sync
 import ui_backend
 import ui_cmd
 import ui_debug
@@ -438,6 +440,15 @@ class MainWindow(QMainWindow):
         # reload()), so don't build them all a second time (~0.25 s of launch).
         self.go(PAGE_MAIN, rebuild_main=False)
 
+        # v0.25.0 (Checklist item 65): say the app is open (so the scheduled
+        # task hands its sync to this window) and take such a request.
+        self._tray = None
+        self._scheduled_pending_since = None
+        self._presence_timer = QTimer(self)
+        self._presence_timer.setInterval(scheduled_sync.HEARTBEAT_SECONDS * 1000)
+        self._presence_timer.timeout.connect(self._presence_tick)
+        self._presence_timer.start()
+
     # -- navigation -----------------------------------------------------
     def go(self, page: int, rebuild_main: bool = True) -> None:
         current = self.stack.currentIndex()
@@ -548,6 +559,9 @@ class MainWindow(QMainWindow):
         skipped when Settings → Scan on launch is Off (v0.16.17)."""
         self.run_update_check(announce=False)
         self.run_component_update(force=False)  # v0.22.0: at most every 12 hours
+        if scheduled_sync.supported() and scheduled_sync.get_setting()["enabled"]:
+            # v0.25.0: re-create the task, so it points at this copy (moved, updated)
+            threading.Thread(target=scheduled_sync.apply, name="scheduled-sync-task", daemon=True).start()
         if ui_settings.get("scan_on_launch"):
             self.start_refresh()
         else:
@@ -725,6 +739,59 @@ class MainWindow(QMainWindow):
                 self.go(PAGE_MAIN)
 
     # -- closing -----------------------------------------------------------------
+    # -- scheduled sync (v0.25.0, Checklist item 65) ---------------------------
+    SCHEDULED_WAIT_RETRY_MS = 30_000
+    SCHEDULED_WAIT_GIVE_UP_S = 3 * 3600
+
+    def _presence_tick(self) -> None:
+        scheduled_sync.app_heartbeat()
+        if scheduled_sync.take_request():
+            logger.log_event("Scheduled sync: the open app takes it over.")
+            self.run_scheduled_sync()
+
+    def run_scheduled_sync(self) -> None:
+        """Sync every playlist now, as the scheduled task asked (or Settings'
+        Try it now). Waits while something else runs or the Edit page is
+        open, trying again every 30 s for up to 3 hours."""
+        import time as _time
+        if self._scheduled_pending_since is None:
+            self._scheduled_pending_since = _time.time()
+        busy = self.ctx.backend.heavy_running or self.stack.currentIndex() == PAGE_EDIT
+        if busy:
+            if _time.time() - self._scheduled_pending_since > self.SCHEDULED_WAIT_GIVE_UP_S:
+                self._scheduled_pending_since = None
+                summary = "Skipped: the app stayed busy for 3 hours."
+                scheduled_sync.record_result(summary, False, in_app=True)
+                scheduled_sync.notify("Scheduled sync skipped", summary, self.tray_icon())
+                return
+            QTimer.singleShot(self.SCHEDULED_WAIT_RETRY_MS, self.run_scheduled_sync)
+            return
+        self._scheduled_pending_since = None
+        if self.overlay.isVisible():
+            self.overlay.close_overlay()
+        problem = self.main_page.start_scheduled_sync()
+        if problem:
+            scheduled_sync.record_result(problem, False, in_app=True)
+            scheduled_sync.notify("Scheduled sync skipped", problem, self.tray_icon())
+
+    def tray_icon(self):
+        """The icon a scheduled sync's notification comes from; shown only
+        for the notification (hidden again a little after)."""
+        from PySide6.QtWidgets import QSystemTrayIcon
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return None
+        if self._tray is None:
+            self._tray = QSystemTrayIcon(self.windowIcon(), self)
+            self._tray.setToolTip(APP_TITLE)
+            self._tray.messageClicked.connect(self._show_from_tray)
+        QTimer.singleShot((scheduled_sync.NOTIFY_SHOW_SECONDS + 5) * 1000, self._tray.hide)
+        return self._tray
+
+    def _show_from_tray(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
     def closeEvent(self, e):
         if self.stack.currentIndex() == PAGE_EDIT and not self.edit_page.confirm_leave():
             e.ignore()
@@ -794,6 +861,14 @@ def run(version: str) -> int:
     ui_theme.apply_app_font(app)
     app.setStyleSheet(ui_theme.build_stylesheet())
     _install_gui_thread_gc(app)
+
+    # v0.25.0 (Checklist item 65): a scheduled sync running in the background
+    # finishes (or is stopped) before the app opens, so only one copy syncs.
+    if scheduled_sync.background_run() is not None:
+        if ui_dialogs.BackgroundSyncDialog().exec() != ui_dialogs.BaseDialog.Accepted:
+            return 0
+    scheduled_sync.app_opened()
+    app.aboutToQuit.connect(scheduled_sync.app_closed)
 
     ctx = AppContext(version)
     window = MainWindow(ctx)

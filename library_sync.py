@@ -113,6 +113,12 @@ read by soundcloud_reader and downloaded by acquire_soundcloud_track()
 (from SoundCloud, or from YouTube when SoundCloud only has a preview).
 The diff and its actions are unchanged.
 
+Playlist files (v0.24.0, Checklist item 64): every completed Sync, and
+every successful exception fix or import, ends by writing the playlist's
+`.m3u8` in its folder (playlist_file.update(); Settings -> Playlist files).
+It runs after the diff and its actions, reads only the files' tags, and
+never raises, so the diff is unchanged.
+
 Apple Music (v0.16.53, Checklist item 42c): an Apple Music entry takes
 the Spotify path (_sync_spotify_playlist(), the tiered YouTube search) --
 its songs are Tracks whose spotify_id is "am:<song id>", read by
@@ -131,6 +137,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import acquisition_engine
 import metadata_tagger
 import config_manager
+import playlist_file
 import exceptions_manager
 import logger
 import spotify_reader
@@ -424,6 +431,9 @@ def _finish_sync(result: SyncResult, folder: Path, report: Callable[[str], None]
                 logger.log_error(f"Couldn't build the source link for the Sync Log of '{folder.name}': {e}")
         _write_download_log(folder, result, link)
 
+    # v0.24.0 (Checklist item 64): the playlist's .m3u8, in its new order.
+    # After the diff and its actions; never raises.
+    playlist_file.update(folder, entry["folder_name"] if entry is not None else folder.name)
     return result
 
 
@@ -1158,6 +1168,7 @@ def fix_track(
                 logger.log_event(f"Removed '{file_path.name}' -- replaced via exception fix")
             except OSError as e:
                 logger.log_error(f"Failed to remove {file_path} during exception fix: {e}")
+        playlist_file.update(folder, entry["folder_name"])  # v0.24.0: the new file's name
     elif old_files:
         logger.log_event(
             f"Exception fix for '{track.name}' failed to download; kept the existing "
@@ -1230,4 +1241,5 @@ def import_track(
     if exceptions_manager.remove_exception(playlist_id, track_key):
         logger.log_event(f"Exception link for '{track.name}' removed: replaced by an imported file")
     track_failures.clear(playlist_id, track_key)
+    playlist_file.update(folder, entry["folder_name"])  # v0.24.0: the new file's name
     return result

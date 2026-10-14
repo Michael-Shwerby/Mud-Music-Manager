@@ -82,7 +82,7 @@ ICONS_FOLDER = "playlist_icons/"
 # choices: never exported, and kept as they are on import (except the
 # cached numbers and last scan time, which describe the replaced playlists
 # and are cleared).
-DEVICE_SETTINGS = ("playlist_cache", "last_scan_at", "sync_timing")
+DEVICE_SETTINGS = ("playlist_cache", "last_scan_at", "sync_timing", "scheduled_sync_last", "device_copy_last")  # v0.25.0: last scheduled run
 
 # Keys config_manager adds while a folder rename / Library move is under
 # way (crash recovery, §3.8): about this computer's folders, never exported.

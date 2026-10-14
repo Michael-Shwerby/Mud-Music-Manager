@@ -29,11 +29,16 @@ visuals, user data, installation); SegmentedControl.clear_selection()
 (Settings' page tabs are two controls, the pages and About, of which
 only one shows a choice); OverlayHost sizes its sheet by the page's
 OVERLAY_SIZE_FRACTION (Settings is larger than the results pages).
+
+v0.27.0: HeartButton, the Main Menu's Support button (a lit, glowing
+heart), heart_path(), and SupportBanner (the Support window's gradient
+header with drifting hearts).
 """
 
 import hashlib
 import math
 import os
+import random
 from typing import List, Optional
 
 from PySide6.QtCore import (
@@ -1112,6 +1117,203 @@ class GlyphButton(QAbstractButton):
         super().hideEvent(e)
 
 
+def heart_path(rect: QRectF) -> QPainterPath:
+    """A heart filling rect (point at the bottom)."""
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+
+    def pt(u, v):
+        return QPointF(x + u * w, y + v * h)
+
+    path = QPainterPath(pt(0.5, 0.97))
+    path.cubicTo(pt(0.16, 0.72), pt(0.0, 0.50), pt(0.0, 0.30))
+    path.cubicTo(pt(0.0, 0.12), pt(0.14, 0.0), pt(0.29, 0.0))
+    path.cubicTo(pt(0.40, 0.0), pt(0.47, 0.06), pt(0.5, 0.16))
+    path.cubicTo(pt(0.53, 0.06), pt(0.60, 0.0), pt(0.71, 0.0))
+    path.cubicTo(pt(0.86, 0.0), pt(1.0, 0.12), pt(1.0, 0.30))
+    path.cubicTo(pt(1.0, 0.50), pt(0.84, 0.72), pt(0.5, 0.97))
+    path.closeSubpath()
+    return path
+
+
+class HeartButton(QAbstractButton):
+    """The Main Menu's Support button (v0.27.0): a boxed button with a lit
+    heart (palette().heart) glowing softly behind it; the glow and the box
+    brighten on hover (fading like GlyphButton's)."""
+
+    def __init__(self, size: int = 54, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self._hover_t = 0.0
+        self._hover_anim: Optional[QVariantAnimation] = None
+        _watch_theme(self)
+
+    def sizeHint(self):
+        return self.size()
+
+    def _set_hover_t(self, v: float) -> None:
+        self._hover_t = v
+        self.update()
+
+    def _animate_hover(self, on: bool) -> None:
+        target = 1.0 if on else 0.0
+        if not ANIMATIONS or not self.isVisible():
+            if self._hover_anim is not None:
+                self._hover_anim.stop()
+            self._set_hover_t(target)
+            return
+        if self._hover_anim is None:
+            self._hover_anim = make_value_anim(self, self._set_hover_t)
+        run_value_anim(self._hover_anim, self._hover_t, target)
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        pal = palette()
+        s = self.width()
+        hover = self._hover_t if self.isEnabled() else 0.0
+        heart = QColor(pal.heart)
+
+        # box: the ordinary button colours, its border taking the heart's colour on hover
+        p.setPen(QPen(mix_color(QColor(pal.btn_border), heart, 0.35 + 0.65 * hover), 1))
+        p.setBrush(mix_color(QColor(pal.btn_bg), QColor(pal.btn_hover), hover))
+        p.drawRoundedRect(QRectF(0.5, 0.5, s - 1, s - 1), 12, 12)
+
+        # glow
+        c = QPointF(s / 2, s * 0.52)
+        glow = QRadialGradient(c, s * 0.46)
+        inner = QColor(heart)
+        inner.setAlphaF(0.40 + 0.25 * hover)
+        outer = QColor(heart)
+        outer.setAlphaF(0.0)
+        glow.setColorAt(0.0, inner)
+        glow.setColorAt(1.0, outer)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(glow))
+        p.drawEllipse(c, s * 0.46, s * 0.46)
+
+        # heart, lighter at the top
+        hw = s * 0.46
+        rect = QRectF((s - hw) / 2, s * 0.30, hw, hw * 0.88)
+        fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        fill.setColorAt(0.0, heart.lighter(135 + int(15 * hover)))
+        fill.setColorAt(1.0, heart)
+        p.setBrush(QBrush(fill))
+        p.drawPath(heart_path(rect))
+
+    def enterEvent(self, e):
+        self._animate_hover(True)
+
+    def leaveEvent(self, e):
+        self._animate_hover(False)
+
+    def hideEvent(self, e):
+        if self._hover_anim is not None:
+            self._hover_anim.stop()
+        self._hover_t = 0.0
+        super().hideEvent(e)
+
+
+class SupportBanner(QWidget):
+    """The Support window's header (v0.27.0): a rounded banner in the
+    primary buttons' gradient (accent → accent2, as Sync Now) with a big title, a glowing heart on the
+    right and small hearts drifting up behind them (still when animations
+    are off)."""
+
+    TITLE_FAMILIES = ["Segoe UI Black", "Segoe UI", "Inter", "Helvetica Neue", "Arial"]
+
+    def __init__(self, title: str, height: int = 128, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self.setFixedHeight(height)
+        self.setMinimumWidth(320)
+        # each floating heart: [x (0-1), y (0-1), size px, speed (per tick), sway phase, alpha]
+        rnd = random.Random(7)  # the same pattern every time
+        self._hearts = [[rnd.random(), rnd.random(), rnd.uniform(7, 17), rnd.uniform(0.0025, 0.006),
+                         rnd.uniform(0, math.tau), rnd.uniform(0.14, 0.30)] for _ in range(5)]  # a few, not a crowd
+        self._tick = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(33)
+        self._timer.timeout.connect(self._step)
+        _watch_theme(self)
+
+    def showEvent(self, e):
+        if ANIMATIONS:
+            self._timer.start()
+        super().showEvent(e)
+
+    def hideEvent(self, e):
+        self._timer.stop()
+        super().hideEvent(e)
+
+    def _step(self) -> None:
+        self._tick += 1
+        for h in self._hearts:
+            h[1] -= h[3]
+            if h[1] < -0.2:
+                h[1] = 1.15
+        self.update()
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        pal = palette()
+        w, h = self.width(), self.height()
+        box = QRectF(0, 0, w, h)
+        clip = QPainterPath()
+        clip.addRoundedRect(box, 18, 18)
+        p.setClipPath(clip)
+
+        # the same gradient as the primary buttons (Sync Now): accent → accent2, left to right
+        grad = QLinearGradient(0, 0, w, 0)
+        grad.setColorAt(0.0, QColor(pal.accent))
+        grad.setColorAt(1.0, QColor(pal.accent2))
+        p.fillPath(clip, QBrush(grad))
+        # soft light from the top left
+        shine = QRadialGradient(QPointF(w * 0.15, -h * 0.2), w * 0.6)
+        shine.setColorAt(0.0, QColor(255, 255, 255, 70))
+        shine.setColorAt(1.0, QColor(255, 255, 255, 0))
+        p.fillPath(clip, QBrush(shine))
+
+        # drifting hearts
+        p.setPen(Qt.NoPen)
+        for x, y, size, _speed, phase, alpha in self._hearts:
+            sway = math.sin(self._tick * 0.05 + phase) * 6
+            col = QColor(255, 255, 255)
+            col.setAlphaF(alpha)
+            p.setBrush(col)
+            p.drawPath(heart_path(QRectF(x * w + sway, y * h, size, size * 0.9)))
+
+        # the big heart on the right, with a glow that beats gently
+        beat = (math.sin(self._tick * 0.12) + 1) / 2 if ANIMATIONS else 0.5
+        hs = h * 0.50
+        c = QPointF(w - h * 0.62, h / 2)
+        glow = QRadialGradient(c, hs * (1.05 + 0.15 * beat))
+        glow.setColorAt(0.0, QColor(255, 255, 255, 120 + int(50 * beat)))
+        glow.setColorAt(1.0, QColor(255, 255, 255, 0))
+        p.setBrush(QBrush(glow))
+        p.drawEllipse(c, hs * 1.2, hs * 1.2)
+        heart_rect = QRectF(c.x() - hs / 2, c.y() - hs * 0.42, hs, hs * 0.9)
+        fill = QLinearGradient(heart_rect.topLeft(), heart_rect.bottomLeft())
+        fill.setColorAt(0.0, QColor("#ffffff"))
+        fill.setColorAt(1.0, QColor(pal.heart).lighter(160))
+        p.setBrush(QBrush(fill))
+        p.drawPath(heart_path(heart_rect))
+
+        # title, with a faint shadow
+        f = QFont()
+        f.setFamilies(self.TITLE_FAMILIES)
+        f.setPointSizeF(32)
+        f.setWeight(QFont.Black)
+        p.setFont(f)
+        text_rect = QRectF(30, 0, w - 30, h)
+        p.setPen(QColor(0, 0, 0, 60))
+        p.drawText(text_rect.translated(0, 2), int(Qt.AlignLeft | Qt.AlignVCenter), self._title)
+        p.setPen(QColor("#ffffff"))
+        p.drawText(text_rect, int(Qt.AlignLeft | Qt.AlignVCenter), self._title)
+
+
 class SpeakerIcon(QWidget):
     """Painted speaker shown beside the player's volume slider (v0.16.9).
     Not a button: it only reflects the level -- a cross at 0, one wave
@@ -1166,7 +1368,7 @@ class GroupIcon(QWidget):
     square in the accent gradient with a glyph in the on-accent colour.
     kind: 'visuals' (an eye), 'user_data' (a database cylinder),
     'install' (an arrow into a tray); v0.23.2: 'other' (three sliders),
-    'download' (an arrow down out of a cloud). Not a button."""
+    'download' (an arrow down out of a cloud); v0.25.0: 'clock'. Not a button."""
 
     def __init__(self, kind: str, size: int = 36, parent=None):
         super().__init__(parent)
@@ -1256,6 +1458,10 @@ class GroupIcon(QWidget):
             head.lineTo(12, 21)
             head.lineTo(16, 17)
             p.drawPath(head)
+        elif k == "clock":  # v0.25.0: Scheduled Sync, a clock face at ten past
+            p.drawEllipse(QPointF(s * .5, s * .5), s * .27, s * .27)
+            p.drawLine(QPointF(s * .5, s * .5), QPointF(s * .5, s * .33))
+            p.drawLine(QPointF(s * .5, s * .5), QPointF(s * .62, s * .57))
 
 
 # ---------------------------------------------------------------------------

@@ -90,6 +90,11 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 ; installer with /SILENT /relaunch=1 and closes itself; reopen it when done.
 Filename: "{app}\{#AppExe}"; Flags: nowait; Check: RelaunchAfterUpdate
 
+[UninstallRun]
+; v0.25.0 (Checklist item 65): remove the Scheduled sync task, if any, so Windows
+; doesn't keep starting a program that's gone (fails quietly when there is none).
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""\Mud Music Manager\Scheduled Sync"" /F"; Flags: runhidden; RunOnceId: "RemoveScheduledSync"
+
 [UninstallDelete]
 ; Leftovers the program itself may create in its folder (never the user's data folder)
 Type: filesandordirs; Name: "{app}\_internal\__pycache__"

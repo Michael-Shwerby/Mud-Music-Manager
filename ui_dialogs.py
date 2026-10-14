@@ -31,6 +31,9 @@ v0.21.0 (Checklist item 60e): in the installed app AppUpdateDialog also has
 Update now; UpdateDownloadDialog shows the installer downloading (progress,
 Cancel) before the app closes for the installer.
 
+v0.27.0: SupportDialog, opened by the Main Menu's heart button: a "Hello"
+banner, Michael's note and his Ko-fi link.
+
 v0.16.24 (Checklist item 27 part 3): keyboard. Each dialog marks its safe
 button (Cancel, Keep editing, Not now, No) with safe_first(); ui_keys
 starts there, so a stray Space can't delete or change anything. Dialogs
@@ -41,22 +44,24 @@ import os
 import re
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QObject, QThread, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QTextCharFormat, QTextCursor
+from PySide6.QtCore import QEasingCurve, QObject, QSize, QThread, Qt, QTimer, QUrl, QVariantAnimation, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPixmap, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
-    QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
+    QDialog, QFileDialog, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
     QPushButton, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 import acquisition_engine
+import app_info
 import config_manager
 import downloader
 import exceptions_manager
 import metadata_tagger
+import scheduled_sync
 import track_failures
 import ui_theme
 import youtube_cookies
-from ui_widgets import SegmentedProgressBar, Spinner, make_button, make_panel
+from ui_widgets import SegmentedProgressBar, Spinner, SupportBanner, animations_on, make_button, make_panel
 
 
 def _set_role(w: QWidget, role: str) -> None:
@@ -85,7 +90,7 @@ class BaseDialog(QDialog):
     Accepted = QDialog.DialogCode.Accepted
     Rejected = QDialog.DialogCode.Rejected
 
-    def __init__(self, parent, title: str, subtitle: str = "", min_width: int = 460):
+    def __init__(self, parent, title: str, subtitle: str = "", min_width: int = 460, heading: bool = True):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
@@ -93,13 +98,14 @@ class BaseDialog(QDialog):
         self._root = QVBoxLayout(self)
         self._root.setContentsMargins(26, 24, 26, 22)
         self._root.setSpacing(12)
-        heading = QLabel(title)
-        heading.setProperty("role", "h2")
-        f = heading.font()
-        f.setPointSizeF(13.5)
-        f.setBold(True)
-        heading.setFont(f)
-        self._root.addWidget(heading)
+        if heading:  # v0.27.0: off for a dialog that draws its own (SupportDialog)
+            head = QLabel(title)
+            head.setProperty("role", "h2")
+            f = head.font()
+            f.setPointSizeF(13.5)
+            f.setBold(True)
+            head.setFont(f)
+            self._root.addWidget(head)
         if subtitle:
             sub = QLabel(subtitle)
             sub.setProperty("role", "muted")
@@ -1149,6 +1155,93 @@ class TextViewerDialog(BaseDialog):
         self.add_buttons(close)
 
 
+SUPPORT_TEXT = (
+    "What started as a simple proof of concept has morphed into a solid tool that I use regularly. "
+    "I figured this tool could be useful to others out there, who are also interested in having their "
+    "music in file form.",
+
+    "Since this is my first time releasing/maintaining a public tool, I'm definitely learning as I go! "
+    "Still though, I plan to keep MMM completely free, open-source, updated, and available for the "
+    "foreseeable future (or as long as I can reasonably do so).",
+
+    "As the lone maintainer of the project, anything helps! If you're enjoying the app, please consider "
+    "supporting me on Ko-Fi or contributing to the code yourself on GitHub! If you'd like to contribute "
+    "to the project's code or request a feature please see the contributing section on GitHub. Thank you.",
+)
+
+# The note's face: warm and rounded but as easy to read as the UI font;
+# the first one installed is used (Candara ships with Windows).
+NOTE_FAMILIES = ["Candara", "Corbel", "Avenir Next", "Segoe UI", "Arial"]
+
+
+class SupportDialog(BaseDialog):
+    """The Main Menu's heart button (v0.27.0): a gradient "Hello" banner
+    with a few drifting hearts (ui_widgets.SupportBanner), Michael's note
+    on a card in a friendly, readable face (Candara), the Ko-fi link (Ko-fi's cup logo) as a
+    pill, and a big gradient "Support MMM ❤" whose glow beats gently.
+    Both links open app_info.KOFI_URL in the browser; the window stays
+    open."""
+
+    def __init__(self, parent):
+        super().__init__(parent, f"Support {app_info.APP_NAME}", min_width=660, heading=False)
+        self._root.setSpacing(16)
+        self._root.addWidget(SupportBanner("Hello"))
+
+        card = make_panel()
+        c_lay = QVBoxLayout(card)
+        c_lay.setContentsMargins(26, 20, 26, 22)
+        c_lay.setSpacing(12)
+        note_font = QFont()
+        note_font.setFamilies(NOTE_FAMILIES)
+        note_font.setPointSizeF(13)
+        for para in SUPPORT_TEXT:
+            text = QLabel(para)
+            text.setWordWrap(True)
+            text.setFont(note_font)
+            c_lay.addWidget(text)
+        self._root.addWidget(card)
+
+        kofi = make_button("  " + app_info.KOFI_URL.split("://", 1)[-1], "link")
+        kofi.setToolTip(f"Open {app_info.KOFI_URL} in your browser")
+        icon = QPixmap(app_info.KOFI_ICON_PATH)
+        if not icon.isNull():
+            kofi.setIcon(QIcon(icon))
+            kofi.setIconSize(QSize(34, 28))
+        kofi.clicked.connect(self._open_kofi)
+        self._root.addWidget(kofi, 0, Qt.AlignHCenter)
+
+        support = make_button("Support MMM  ❤", "support")
+        support.setToolTip(f"Open {app_info.KOFI_URL} in your browser")
+        support.clicked.connect(self._open_kofi)
+        # a glow in the heart's colour that swells and fades like a heartbeat
+        glow = QGraphicsDropShadowEffect(support)
+        glow.setOffset(0, 0)
+        glow.setColor(QColor(ui_theme.palette().heart))
+        glow.setBlurRadius(28)
+        support.setGraphicsEffect(glow)
+        if animations_on():
+            self._beat = QVariantAnimation(self)
+            self._beat.setStartValue(14.0)
+            self._beat.setKeyValueAt(0.5, 44.0)
+            self._beat.setEndValue(14.0)
+            self._beat.setDuration(1600)
+            self._beat.setEasingCurve(QEasingCurve.InOutSine)
+            self._beat.setLoopCount(-1)
+            self._beat.valueChanged.connect(lambda v: glow.setBlurRadius(float(v)))
+            self._beat.start()
+        self._root.addSpacing(6)
+        self._root.addWidget(support, 0, Qt.AlignHCenter)
+
+        close = safe_first(make_button("Close"))
+        close.clicked.connect(self.accept)
+        self.add_buttons(close)
+        # tall enough for the wrapped text at this width (it was cut off otherwise)
+        self.setMinimumHeight(self._root.totalHeightForWidth(self.minimumWidth()))
+
+    def _open_kofi(self) -> None:
+        QDesktopServices.openUrl(QUrl(app_info.KOFI_URL))
+
+
 class ImportDataDialog(BaseDialog):
     """Settings → Your data → Import (v0.17.8, Checklist item 59): what the
     backup holds, what it replaces, and where the Music folder will be.
@@ -1376,6 +1469,60 @@ class UpdateDownloadDialog(BaseDialog):
 
     def reject(self):  # Esc / the window's X: cancel first, close once the download has stopped
         self._cancel()
+
+
+class BackgroundSyncDialog(BaseDialog):
+    """v0.25.0 (Checklist item 65): the app was opened while a scheduled
+    sync runs in the background (scheduled_sync.background_run()). Two
+    copies must never sync at once, so the app waits: this window follows
+    the background run's progress and opens the app when it ends. Stop
+    asks it to stop at its next safe point (the song downloading finishes,
+    as Cancel does). Close (or Esc) quits instead of opening the app.
+    exec() returns Accepted when the app may open."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, "A scheduled sync is running",
+                         "Your playlists are being synced in the background. Mud Music Manager opens when it "
+                         "finishes, so the two never change your music at the same time.", min_width=520)
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.spinner = Spinner(22)
+        row.addWidget(self.spinner, 0, Qt.AlignVCenter)
+        self.spinner.start()
+        self.message = QLabel("")
+        self.message.setProperty("role", "muted")
+        self.message.setWordWrap(True)
+        row.addWidget(self.message, 1)
+        self._root.addLayout(row)
+        self.stop_btn = make_button("Stop it and open the app")
+        self.stop_btn.clicked.connect(self._stop)
+        self.quit_btn = safe_first(make_button("Close", "ghost"))
+        self.quit_btn.clicked.connect(self.reject)
+        self.add_buttons(self.quit_btn, self.stop_btn)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._poll)
+        self._timer.start(1000)
+        self._poll()
+
+    def _poll(self) -> None:
+        state = scheduled_sync.background_run()
+        if state is None:
+            self._timer.stop()
+            self.accept()
+            return
+        where = state.get("playlist")
+        count = f" ({state.get('index')} of {state.get('total')})" if state.get("total") else ""
+        text = f"Syncing ‘{where}’{count}." if where else "Starting…"
+        if state.get("current"):
+            text += "\n" + state["current"]
+        if state.get("stop"):
+            text = "Stopping after the current song…\n" + text
+        self.message.setText(text)
+
+    def _stop(self) -> None:
+        scheduled_sync.request_stop()
+        self.stop_btn.setEnabled(False)
+        self._poll()
 
 
 class BusyDialog(QDialog):

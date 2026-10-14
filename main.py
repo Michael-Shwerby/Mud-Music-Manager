@@ -76,6 +76,7 @@ import dependency_checker
 import download_settings
 import logger
 import metadata_tagger
+import scheduled_sync
 import track_failures
 import ui_libraries
 import ui_settings
@@ -126,6 +127,8 @@ SETTINGS_MENU_ACTIONS = {
     "cmd": ["cmd", "cmd button", "command"],
     "download": ["download quality", "download", "quality"],
     "explicit": ["explicit", "prefer explicit", "prefer explicit versions"],  # v0.17.7
+    "playlistfiles": ["playlist files", "playlist file", "m3u", "m3u8"],  # v0.24.0 (Checklist item 64)
+    "schedule": ["schedule", "scheduled sync", "scheduled", "auto sync"],  # v0.25.0 (Checklist item 65)
     "signin": ["youtube sign-in", "sign-in", "sign in", "signin", "youtube", "cookies"],
     "libraries": ["libraries", "library", "paths"],
     "export": ["export", "export data", "export your data", "backup"],  # v0.17.9 (Checklist item 59)
@@ -678,6 +681,12 @@ def _with_new_releases(config, entries):
 
 
 def handle_sync(config):
+    # v0.25.0 (Checklist item 65): never two syncs writing at once
+    running = scheduled_sync.background_run()
+    if running:
+        print(f"\nA scheduled sync is running in the background ({running.get('playlist') or 'starting'}). "
+              "Wait for it to finish, or open the app to stop it, then Sync again.")
+        return
     playlists = _print_playlists(config)
     if not playlists:
         return
@@ -1344,6 +1353,39 @@ def _signin_line():
     return f"on, with {youtube_cookies.describe(s)}"
 
 
+def _edit_scheduled_sync():
+    """v0.25.0 (Checklist item 65): Settings -> Scheduled sync. On / off,
+    the time, the notification; the Windows task is updated at once."""
+    if not scheduled_sync.supported():
+        print("Scheduled sync is only available on Windows.")
+        return
+    s = scheduled_sync.get_setting()
+    print(f"\nScheduled sync: {scheduled_sync.describe(s)}. {scheduled_sync.last_result_text()}")
+    pick = input("Scheduled sync (on/off, Enter keeps it): ").strip().lower()
+    if pick in ("on", "off"):
+        s = scheduled_sync.set_setting(enabled=pick == "on")
+    elif pick:
+        print("Not a valid option.")
+        return
+    if s["enabled"]:
+        typed = input(f"Time each day (HH:MM, Enter keeps {s['time']}): ").strip()
+        if typed:
+            at = scheduled_sync.parse_time(typed)
+            if at is None:
+                print("Not a valid time; kept " + s["time"] + ".")
+            else:
+                s = scheduled_sync.set_setting(time=at)
+        typed = input(f"Notification when it finishes (on/off, Enter keeps {'on' if s['notify'] else 'off'}): ")
+        typed = typed.strip().lower()
+        if typed in ("on", "off"):
+            s = scheduled_sync.set_setting(notify=typed == "on")
+    error = scheduled_sync.apply()
+    if error:
+        print(f"Couldn't update the Windows scheduled task: {error}")
+    else:
+        print(f"Scheduled sync: {scheduled_sync.describe(s)}.")
+
+
 def handle_settings(config):
     while True:
         print("\nSettings:")
@@ -1352,10 +1394,14 @@ def handle_settings(config):
         print(f"  CMD button:        {cmd_label}   (what the GUI's CMD button opens)")
         print(f"  Prefer explicit:   {'On' if ui_settings.get('prefer_explicit') else 'Off'}   "
               f"(pick a song's explicit version over its clean one)")
+        print(f"  Playlist files:    {'Off' if ui_settings.get('playlist_files') is False else 'On'}   "
+              f"(a .m3u8 in each playlist folder, written by every Sync)")
+        if scheduled_sync.supported():  # v0.25.0 (Checklist item 65)
+            print(f"  Scheduled sync:    {scheduled_sync.describe()}   ({scheduled_sync.last_result_text()})")
         print(f"  Download quality:  {_download_quality_line()}")
         print(f"  YouTube sign-in:   {_signin_line()}")
         print("  Your data:         Export / Import a backup of your playlists, exceptions and settings")
-        print("\n\tTheme | CMD | Explicit | Download Quality | Sign-in | Libraries")
+        print("\n\tTheme | CMD | Explicit | Playlist Files | Schedule | Download Quality | Sign-in | Libraries")
         print("\tExport | Import")
         print("\nDone")
         choice = input("> ").strip()
@@ -1383,6 +1429,17 @@ def handle_settings(config):
                 print(f"Prefer explicit versions: {pick.capitalize()}. Applies to songs downloaded from now on.")
             else:
                 print("Not a valid option.")
+        elif action == "playlistfiles":
+            # v0.24.0 (Checklist item 64): Settings -> Playlist files
+            pick = input("Playlist files (on/off): ").strip().lower()
+            if pick in ("on", "off"):
+                ui_settings.set_value("playlist_files", pick == "on")
+                print(f"Playlist files: {pick.capitalize()}. Each playlist's file is "
+                      f"{'written' if pick == 'on' else 'removed'} at its next Sync.")
+            else:
+                print("Not a valid option.")
+        elif action == "schedule":
+            _edit_scheduled_sync()
         elif action == "download":
             _edit_download_settings()
         elif action == "signin":
@@ -1805,6 +1862,10 @@ def main():
         # (run from a console: `Mud Music Manager CLI.exe --selftest`).
         import self_test
         sys.exit(self_test.run(download="--no-download" not in sys.argv[1:]))
+    if scheduled_sync.ARG in sys.argv[1:]:
+        # v0.25.0 (Checklist item 65): what the Windows scheduled task runs.
+        # No window; hands over to the open app if there is one.
+        sys.exit(scheduled_sync.run_headless())
     if "--cli" in sys.argv[1:]:
         if debug_console.cli_can_run_here():  # a console, or the in-app CMD window's pipes (v0.16.7)
             run_cli()

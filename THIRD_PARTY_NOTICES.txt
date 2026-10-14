@@ -59,7 +59,13 @@ with, sponsored or endorsed by any of them. Their names appear in the app
 only to say where a playlist comes from; the round platform badges are
 plain lettered tags drawn by the app, not those companies' logos.
 
-"Mud Music Manager", the MMM logo and the MMM emblem (the files in the
-"assets" folder) are trademarks of Michael Xuereb. Under section 7(e) of
-the GPL, the licence does not grant any right to use them as trademarks:
-a modified version you distribute must use a different name and logo.
+"Mud Music Manager", the MMM logo and the MMM emblem (the logo_* and
+app_icon.* files in the "assets" folder) are trademarks of Michael Xuereb.
+Under section 7(e) of the GPL, the licence does not grant any right to use
+them as trademarks: a modified version you distribute must use a different
+name and logo.
+
+Ko-fi and the Ko-fi cup logo (assets\kofi_symbol.png, shown beside the
+Ko-fi link in the Support window) are trademarks of Ko-fi Labs Ltd. The
+logo is their brand asset, used unchanged to link to Michael Xuereb's Ko-fi
+page; it is not covered by Mud Music Manager's licence.

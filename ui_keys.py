@@ -81,6 +81,7 @@ DEFAULT_KEYMAP: Dict[str, Dict[str, List[str]]] = {
         "sync": ["1"],
         "scan": ["2"],
         "integrity": ["3"],
+        "copy": ["4"],                      # v0.26.0 (item 66): Copy to Device
         **{f"playlist_{n}": [str(n)] for n in range(1, 10)},
         "toggle_all": ["F"],
         "remove": ["R"],
@@ -173,7 +174,7 @@ ACTION_LABELS: Dict[str, Dict[str, str]] = {
         "move_up": "Move the playlist up", "move_down": "Move the playlist down",
         "select": "Press / expand / tick", "start": "Start the run (while choosing)",
         "position": "Type the playlist's position", "back": "Back (leave Remove / choosing, clear the search)",
-        "sync": "Sync Now", "scan": "Scan", "integrity": "Check Integrity",
+        "sync": "Sync Now", "scan": "Scan", "integrity": "Check Integrity", "copy": "Copy to Device",
         **{f"playlist_{n}": f"Tick playlist {n} (while choosing)" for n in range(1, 10)},
         "toggle_all": "Check all / Uncheck all", "remove": "Remove",
         "add": "Add (Queue Another Playlist while adding)", "edit": "Edit",
@@ -209,7 +210,7 @@ ACTION_LABELS: Dict[str, Dict[str, str]] = {
 
 # Actions that are never live at the same moment may share a key on one
 # screen (1 = Sync Now normally, = playlist 1 while choosing).
-_MAIN_NORMAL_ONLY = {"sync", "scan", "integrity", "position"}
+_MAIN_NORMAL_ONLY = {"sync", "scan", "integrity", "copy", "position"}
 _MAIN_CHOOSING_ONLY = {f"playlist_{n}" for n in range(1, 10)} | {"start"}
 _DIALOG_FIELD_ONLY = {"field_up", "field_down"}
 
@@ -316,7 +317,7 @@ MAP_LAYOUT = {
             ("Type the playlist's position", ["position"]),
         ]),
         ("Actions", [
-            ("Sync Now / Scan / Check Integrity", ["sync", "scan", "integrity"]),
+            ("Sync Now / Scan / Check Integrity / Copy to Device", ["sync", "scan", "integrity", "copy"]),
             ("Add / Remove / Edit", ["add", "remove", "edit"]),
             ("Expand all / Collapse all", ["expand_all", "collapse_all"]),
             ("Search playlists", ["search"]),
