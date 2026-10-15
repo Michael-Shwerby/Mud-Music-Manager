@@ -77,12 +77,12 @@ Then double-click `Mud Music Manager.pyw`, or run `python main.py` (graphical ap
 # USAGE
 
 <!-- Guides and diagrams coming soon. -->
-
+N/A
 
 # DOWNLOAD CONFIGURATION
 
 <!-- Screenshot and explanation of the download settings coming soon. -->
-
+N/A
 
 # CONTRIBUTING
 
@@ -133,7 +133,7 @@ Have an idea? See [Requesting a feature](#requesting-a-feature).
 
 # FAQ
 
-None yet...
+None yet
 
 
 ---
