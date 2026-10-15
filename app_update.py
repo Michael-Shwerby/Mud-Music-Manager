@@ -45,6 +45,22 @@ them into an installed copy): they keep the "Open download page" button.
 
 MMM_UPDATE_API (environment variable) replaces https://api.github.com, for
 testing against a local fake release server.
+
+v0.28.0 (Checklist item 60h, Michael 2026-10-14): updating means installing
+the newest RELEASE, which carries the newest Python, libraries, Deno and
+FFmpeg (built and published automatically by .github/workflows/release.yml),
+instead of swapping single libraries. Update & Restart MMM does it:
+  - installed app: the installer, as above;
+  - portable copy (new): download_update() fetches the release's
+    MudMusicManager-Portable-<version>.zip and checks it like the installer;
+    launch_portable_update() unpacks it next to this copy and starts a small
+    PowerShell script that waits for the app to close, swaps the program's
+    files (_internal\\, tools\\ and the files beside the .exe; the old ones
+    kept until the new ones are in place, put back on any failure), leaves
+    the data in that folder untouched, logs to logs\\update_log.txt and
+    opens the app again;
+  - running from source: the release page only (a source copy is updated
+    with git).
 """
 
 import hashlib
@@ -66,6 +82,7 @@ API_ENV = "MMM_UPDATE_API"
 TIMEOUT_SECONDS = 6
 DOWNLOAD_TIMEOUT_SECONDS = 30            # per network read, not the whole download
 INSTALLER_PREFIX = "MudMusicManager-Setup-"
+PORTABLE_PREFIX = "MudMusicManager-Portable-"   # v0.28.0
 SUMS_NAME = "SHA256SUMS.txt"
 DOWNLOAD_FOLDER = os.path.join(tempfile.gettempdir(), "Mud Music Manager update")
 
@@ -97,6 +114,10 @@ class AppUpdateStatus:
     installer_url: str = ""
     installer_size: int = 0
     sums_url: str = ""
+    # v0.28.0: the release's portable .zip
+    portable_name: str = ""
+    portable_url: str = ""
+    portable_size: int = 0
 
     def can_install(self) -> bool:
         """True when Update now can install this release: there is a newer
@@ -104,6 +125,16 @@ class AppUpdateStatus:
         installed app (packaged, not portable)."""
         return (self.outdated and bool(self.installer_url) and bool(self.sums_url)
                 and app_paths.FROZEN and not app_paths.is_portable())
+
+    def can_update_portable(self) -> bool:
+        """v0.28.0: a newer release with a portable .zip and a checksum file,
+        and this copy is the portable app."""
+        return (self.outdated and bool(self.portable_url) and bool(self.sums_url)
+                and app_paths.FROZEN and app_paths.is_portable())
+
+    def can_self_update(self) -> bool:
+        """Update & Restart MMM can update this copy by itself (v0.28.0)."""
+        return self.can_install() or self.can_update_portable()
 
     def summary(self) -> str:
         """One line for the header, Settings and the terminal menu."""
@@ -191,6 +222,9 @@ def check_latest(current: Optional[str] = None, timeout: float = TIMEOUT_SECONDS
         if name.startswith(INSTALLER_PREFIX) and name.lower().endswith(".exe") and link:
             status.installer_name, status.installer_url = name, link
             status.installer_size = int(asset.get("size") or 0)
+        elif name.startswith(PORTABLE_PREFIX) and name.lower().endswith(".zip") and link:  # v0.28.0
+            status.portable_name, status.portable_url = name, link
+            status.portable_size = int(asset.get("size") or 0)
         elif name == SUMS_NAME and link:
             status.sums_url = link
     mine = parse_version(current)
@@ -205,8 +239,10 @@ def check_latest(current: Optional[str] = None, timeout: float = TIMEOUT_SECONDS
 # One-click update (v0.21.0, Checklist item 60e)
 # ---------------------------------------------------------------------------
 
-def _expected_sha256(status: AppUpdateStatus) -> str:
-    """The installer's fingerprint as listed in the release's SHA256SUMS.txt."""
+def _expected_sha256(status: AppUpdateStatus, file_name: Optional[str] = None) -> str:
+    """A release file's fingerprint (the installer's by default) as listed in
+    the release's SHA256SUMS.txt."""
+    file_name = file_name or status.installer_name
     try:
         response = requests.get(status.sums_url, timeout=TIMEOUT_SECONDS,
                                 headers={"User-Agent": f"Mud-Music-Manager/{status.current}"})
@@ -215,9 +251,9 @@ def _expected_sha256(status: AppUpdateStatus) -> str:
         raise UpdateError(f"Couldn't download the release's checksum file ({type(e).__name__}).")
     for line in response.text.splitlines():
         parts = line.strip().split()
-        if len(parts) == 2 and parts[1].lstrip("*") == status.installer_name and len(parts[0]) == 64:
+        if len(parts) == 2 and parts[1].lstrip("*") == file_name and len(parts[0]) == 64:
             return parts[0].lower()
-    raise UpdateError("The release's checksum file doesn't list its installer, so it can't be checked. "
+    raise UpdateError("The release's checksum file doesn't list its download, so it can't be checked. "
                       "Download it from the release page instead.")
 
 
@@ -232,18 +268,38 @@ def download_installer(status: AppUpdateStatus,
     name = os.path.basename(status.installer_name or "")
     if not (name.startswith(INSTALLER_PREFIX) and name.lower().endswith(".exe") and status.installer_url):
         raise UpdateError("This release has no installer to download.")
-    expected = _expected_sha256(status)
+    return _download(status, name, status.installer_url, status.installer_size, on_progress, should_cancel)
+
+
+def download_update(status: AppUpdateStatus,
+                    on_progress: Optional[Callable[[int, int], None]] = None,
+                    should_cancel: Optional[Callable[[], bool]] = None) -> str:
+    """v0.28.0: what Update & Restart MMM downloads for this copy: the
+    installer (installed app) or the portable .zip (portable copy), checked
+    against SHA256SUMS.txt. Returns its path; raises UpdateError."""
+    if status.can_update_portable():
+        name = os.path.basename(status.portable_name or "")
+        if not (name.startswith(PORTABLE_PREFIX) and name.lower().endswith(".zip")):
+            raise UpdateError("This release has no portable .zip to download.")
+        return _download(status, name, status.portable_url, status.portable_size, on_progress, should_cancel)
+    return download_installer(status, on_progress, should_cancel)
+
+
+def _download(status: AppUpdateStatus, name: str, url: str, size: int,
+              on_progress: Optional[Callable[[int, int], None]],
+              should_cancel: Optional[Callable[[], bool]]) -> str:
+    expected = _expected_sha256(status, name)
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
     final = os.path.join(DOWNLOAD_FOLDER, name)
     part = final + ".part"
     digest = hashlib.sha256()
     done = 0
-    logger.log_event(f"App update: downloading {status.installer_url}")
+    logger.log_event(f"App update: downloading {url}")
     try:
-        with requests.get(status.installer_url, stream=True, timeout=DOWNLOAD_TIMEOUT_SECONDS,
+        with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT_SECONDS,
                           headers={"User-Agent": f"Mud-Music-Manager/{status.current}"}) as response:
             response.raise_for_status()
-            total = int(response.headers.get("Content-Length") or status.installer_size or 0)
+            total = int(response.headers.get("Content-Length") or size or 0)
             with open(part, "wb") as f:
                 for chunk in response.iter_content(chunk_size=256 * 1024):
                     if should_cancel is not None and should_cancel():
@@ -267,8 +323,8 @@ def download_installer(status: AppUpdateStatus,
     if actual != expected:
         _remove(part)
         logger.log_error(f"App update: {name} fingerprint {actual} doesn't match the release's {expected}; deleted")
-        raise UpdateError("The downloaded installer didn't match the release's fingerprint, so it was deleted "
-                          "and nothing was installed. Try again, or download it from the release page.")
+        raise UpdateError("The download didn't match the release's fingerprint, so it was deleted and nothing "
+                          "was installed. Try again, or download it from the release page.")
     os.replace(part, final)
     logger.log_event(f"App update: {name} downloaded ({done:,} bytes) and its fingerprint matches")
     return final
@@ -295,6 +351,105 @@ def launch_installer(path: str) -> None:
         logger.log_error(f"App update: couldn't start {path}: {e}")
         raise UpdateError(f"Couldn't start the installer: {e}")
     logger.log_event(f"App update: started {os.path.basename(path)}; closing the app for it")
+
+
+# ---------------------------------------------------------------------------
+# Portable copy (v0.28.0): swap the program files, keep the data
+# ---------------------------------------------------------------------------
+
+# The files and folders a portable copy's program is made of (build.ps1's
+# program folder). Everything else in that folder is the user's data
+# (playlists.json, logs\, components\, ...) and is never touched.
+PROGRAM_FOLDERS = ("_internal", "tools")
+
+_SWAP_SCRIPT = r"""
+$ErrorActionPreference = 'Stop'
+$AppPid = {pid}
+$App = '{app}'
+$New = '{new}'
+$Log = '{log}'
+$Exe = Join-Path $App '{exe}'
+function Say($t) {{ Add-Content -LiteralPath $Log -Value ("[{{0:yyyy-MM-dd HH:mm:ss}}] {{1}}" -f (Get-Date), $t) }}
+try {{ Wait-Process -Id $AppPid -Timeout 120 -ErrorAction SilentlyContinue }} catch {{}}
+Start-Sleep -Milliseconds 500
+Say "Portable update: replacing the program files in $App with $New"
+$moved = @()
+try {{
+    foreach ($d in @({folders})) {{
+        $old = Join-Path $App $d
+        if (Test-Path -LiteralPath $old) {{
+            Rename-Item -LiteralPath $old -NewName ($d + '.old-mmm') ; $moved += $d
+        }}
+    }}
+    Get-ChildItem -LiteralPath $New -Force | ForEach-Object {{
+        Copy-Item -LiteralPath $_.FullName -Destination $App -Recurse -Force
+    }}
+    foreach ($d in $moved) {{ Remove-Item -LiteralPath (Join-Path $App ($d + '.old-mmm')) -Recurse -Force -ErrorAction SilentlyContinue }}
+    Remove-Item -LiteralPath (Split-Path $New -Parent) -Recurse -Force -ErrorAction SilentlyContinue
+    Say "Portable update: done"
+}} catch {{
+    Say ("Portable update failed: " + $_.Exception.Message + " -- putting the old program files back")
+    foreach ($d in $moved) {{
+        $cur = Join-Path $App $d
+        if (Test-Path -LiteralPath $cur) {{ Remove-Item -LiteralPath $cur -Recurse -Force -ErrorAction SilentlyContinue }}
+        Rename-Item -LiteralPath (Join-Path $App ($d + '.old-mmm')) -NewName $d -ErrorAction SilentlyContinue
+    }}
+}}
+Start-Process -FilePath $Exe -WorkingDirectory $App
+"""
+
+
+def launch_portable_update(zip_path: str) -> None:
+    """Unpack the downloaded portable .zip next to the app and start the
+    script that swaps the program files once the app has closed, then
+    reopens it (see the module notes). The caller must quit the app
+    straight after. Raises UpdateError if it can't be prepared or started."""
+    import shutil
+    import zipfile
+    staging = os.path.join(DOWNLOAD_FOLDER, "portable")
+    shutil.rmtree(staging, ignore_errors=True)
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            for member in z.namelist():
+                parts = member.replace("\\", "/").split("/")
+                if member.startswith("/") or ".." in parts or ":" in parts[0]:
+                    raise UpdateError("The portable .zip holds an unsafe file name, so it wasn't used.")
+            z.extractall(staging)
+    except (zipfile.BadZipFile, OSError) as e:
+        raise UpdateError(f"The portable .zip couldn't be unpacked ({type(e).__name__}).")
+    new = os.path.join(staging, app_info.APP_NAME)
+    if not os.path.isfile(os.path.join(new, app_paths.GUI_EXE_NAME)):
+        raise UpdateError("The portable .zip doesn't hold Mud Music Manager.exe, so it wasn't used.")
+    log_dir = app_paths.data_path("logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    def ps(text: str) -> str:  # a PowerShell single-quoted string
+        return str(text).replace("'", "''")
+
+    script = _SWAP_SCRIPT.format(
+        pid=os.getpid(), app=ps(app_paths.APP_DIR), new=ps(new), log=ps(os.path.join(log_dir, "update_log.txt")),
+        exe=ps(app_paths.GUI_EXE_NAME), folders=", ".join(f"'{ps(d)}'" for d in PROGRAM_FOLDERS))
+    script_path = os.path.join(DOWNLOAD_FOLDER, "portable_update.ps1")
+    with open(script_path, "w", encoding="utf-8-sig") as f:
+        f.write(script)
+    try:
+        subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+                          "-File", script_path], close_fds=True, cwd=DOWNLOAD_FOLDER,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=0x08000000 | 0x00000200)  # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
+    except OSError as e:
+        logger.log_error(f"App update: couldn't start the portable update: {e}")
+        raise UpdateError(f"Couldn't start the update: {e}")
+    logger.log_event(f"App update: portable update of {app_paths.APP_DIR} started; closing the app for it")
+
+
+def launch_update(path: str) -> None:
+    """v0.28.0: start what download_update() fetched - the installer, or the
+    portable swap. The caller must quit the app straight after."""
+    if path.lower().endswith(".zip"):
+        launch_portable_update(path)
+    else:
+        launch_installer(path)
 
 
 APP_ID_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{4974306D-5BCE-4E0F-A115-EED0580EF47D}_is1"

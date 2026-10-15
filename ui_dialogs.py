@@ -34,6 +34,12 @@ Cancel) before the app closes for the installer.
 v0.27.0: SupportDialog, opened by the Main Menu's heart button: a "Hello"
 banner, Michael's note and his Ko-fi link.
 
+v0.28.0 (Checklist item 60h): UpdateDetailsDialog, opened by clicking the
+header's version pill: what is out of date (replaces UpdatesDialog). Check For Updates no longer pops a dialog up when something
+is out of date, so AppUpdateDialog is gone: a new release's notes and its
+download page are in UpdateDetailsDialog. UpdateDownloadDialog is gone too:
+Update & Restart MMM shows the download as a thin bar under the button.
+
 v0.16.24 (Checklist item 27 part 3): keyboard. Each dialog marks its safe
 button (Cancel, Keep editing, Not now, No) with safe_first(); ui_keys
 starts there, so a stray Space can't delete or change anything. Dialogs
@@ -61,7 +67,9 @@ import scheduled_sync
 import track_failures
 import ui_theme
 import youtube_cookies
-from ui_widgets import SegmentedProgressBar, Spinner, SupportBanner, animations_on, make_button, make_panel
+from ui_widgets import (
+    Spinner, SupportBanner, UpdateRestartBox, animations_on, make_button, make_panel,
+)
 
 
 def _set_role(w: QWidget, role: str) -> None:
@@ -1290,26 +1298,54 @@ class ImportDataDialog(BaseDialog):
         self.add_buttons(cancel, go)
 
 
-class UpdatesDialog(BaseDialog):
-    """Offers to pip-update outdated libraries (same set the terminal
-    menu's Update Project Libraries offers)."""
+class UpdateDetailsDialog(BaseDialog):
+    """What the update check found (v0.28.0, Checklist item 60h; replaces
+    the library-only UpdatesDialog). Opened by clicking the header's version
+    pill (or Settings → Updates → Details): a short list of what is out of
+    date (update_scan.details_markdown()), with Update & Restart MMM and its
+    "(This may take a minute*)" note when there are updates, and the app's
+    download page when it must be fetched by hand."""
 
-    def __init__(self, parent, outdated: list):
-        super().__init__(
-            parent, "Library updates available",
-            f"{len(outdated)} project librar{'y has' if len(outdated) == 1 else 'ies have'} a newer version.",
-        )
-        lines = "\n".join(f"•  {s.name}:  {s.installed_version}  →  {s.latest_version}" for s in outdated)
-        body = QLabel(lines)
-        self._root.addWidget(body)
-        note = QLabel("Updates take effect after you restart Mud Music Manager.")
-        note.setProperty("role", "muted")
-        self._root.addWidget(note)
-        later = safe_first(make_button("Not now"))
-        later.clicked.connect(self.reject)
-        update = make_button("Update now", "primary")
-        update.clicked.connect(self.accept)
-        self.add_buttons(later, update)
+    def __init__(self, parent, markdown: str, restart_ready: bool, page_url: str = ""):
+        super().__init__(parent, "Updates", min_width=640)
+        self.setMinimumHeight(440)
+        view = QTextBrowser()
+        view.setOpenExternalLinks(True)
+        view.setMarkdown(markdown)
+        _recolour_links(view.document(), QColor(ui_theme.palette().link))
+        self._root.addWidget(view, 1)
+        self.choice: Optional[str] = None  # "restart", "page" or None
+        self._url = page_url
+        close = safe_first(make_button("Close"))
+        close.clicked.connect(self.reject)
+        buttons = [close]
+        if page_url:
+            page = make_button("Open download page", "ghost" if restart_ready else "primary")
+            page.setToolTip(page_url)
+            page.clicked.connect(self._open_page)
+            buttons.append(page)
+        row = self.add_buttons(*buttons)
+        if restart_ready:
+            box = QVBoxLayout()
+            box.setSpacing(3)
+            restart = make_button("Update && Restart MMM", "primary")
+            restart.setToolTip("Download the updates, then close Mud Music Manager and open it again with them")
+            restart.clicked.connect(self._restart)
+            box.addWidget(restart)
+            note = QLabel(UpdateRestartBox.NOTE)
+            note.setProperty("role", "faint")
+            note.setAlignment(Qt.AlignCenter)
+            box.addWidget(note)
+            row.addLayout(box)
+
+    def _open_page(self) -> None:
+        QDesktopServices.openUrl(QUrl(self._url))
+        self.choice = "page"
+        self.accept()
+
+    def _restart(self) -> None:
+        self.choice = "restart"
+        self.accept()
 
 
 def _recolour_links(document, colour: QColor) -> None:
@@ -1329,146 +1365,6 @@ def _recolour_links(document, colour: QColor) -> None:
                 cursor.mergeCharFormat(fmt)
             it += 1
         block = block.next()
-
-
-def _installed_for_all_users() -> bool:
-    try:
-        import app_update
-        return app_update.installed_for_all_users()
-    except Exception:
-        return False
-
-
-class AppUpdateDialog(BaseDialog):
-    """A newer Mud Music Manager is published on GitHub (v0.19.0, Checklist
-    item 60b): this version → the new one, its release notes, and a button
-    that opens its download page in the browser. Nothing is installed from
-    here yet (Checklist item 60e)."""
-
-    def __init__(self, parent, status):
-        when = f", released {status.published}" if status.published else ""
-        super().__init__(
-            parent, "A new version is available",
-            f"Mud Music Manager v{status.latest}{when}. You have v{status.current}.",
-            min_width=620,
-        )
-        self.setMinimumHeight(420)
-        heading = QLabel("What's new")
-        heading.setProperty("role", "capsmuted")
-        self._root.addWidget(heading)
-        notes = QTextBrowser()
-        notes.setOpenExternalLinks(True)
-        if status.notes:
-            notes.setMarkdown(status.notes)
-            _recolour_links(notes.document(), QColor(ui_theme.palette().link))
-        else:
-            notes.setPlainText("This release has no notes.")
-        self._root.addWidget(notes, 1)
-        # v0.21.0 (Checklist item 60e): the installed app can update itself.
-        installable = status.can_install()
-        all_users = installable and _installed_for_all_users()
-        how = QLabel(
-            "Update now downloads it, checks it and installs it: Mud Music Manager closes and reopens by "
-            "itself. Your playlists, settings and music stay as they are."
-            + (" This copy is installed for all users, so Windows will ask for administrator permission."
-               if all_users else "")
-            if installable else
-            "Download it from its page on GitHub. Your playlists, settings and music stay as they are.")
-        how.setProperty("role", "muted")
-        how.setWordWrap(True)
-        self._root.addWidget(how)
-        self._url = status.page_url
-        self.choice: Optional[str] = None  # "update", "page" or None
-        later = safe_first(make_button("Not now"))
-        later.clicked.connect(self.reject)
-        page = make_button("Open download page", "ghost" if installable else "primary")
-        page.setToolTip(self._url)
-        page.clicked.connect(self._open_page)
-        if installable:
-            size = f" ({status.installer_size / 1_048_576:.0f} MB)" if status.installer_size else ""
-            update = make_button("Update now", "primary")
-            update.setToolTip(f"Download and install v{status.latest}{size}")
-            update.clicked.connect(self._update_now)
-            self.add_buttons(later, page, update)
-        else:
-            self.add_buttons(later, page)
-
-    def _open_page(self) -> None:
-        QDesktopServices.openUrl(QUrl(self._url))
-        self.choice = "page"
-        self.accept()
-
-    def _update_now(self) -> None:
-        self.choice = "update"
-        self.accept()
-
-
-class UpdateDownloadDialog(BaseDialog):
-    """Update now (v0.21.0, Checklist item 60e): the installer downloading,
-    with a progress bar and Cancel, then "starting the installer". The
-    download itself runs on a background thread (ui_backend.download_update_task);
-    the window calls on_cancel when Cancel is pressed and closes itself only
-    once that thread has ended."""
-
-    def __init__(self, parent, status, on_cancel):
-        super().__init__(parent, f"Updating to v{status.latest}",
-                         "Downloading the installer from GitHub…", min_width=520)
-        self._on_cancel = on_cancel
-        self._finished = False
-        self.message = QLabel("Starting the download…")
-        self.message.setProperty("role", "muted")
-        self.message.setWordWrap(True)
-        self._root.addWidget(self.message)
-        self.bar = SegmentedProgressBar()
-        self.bar.set_segments(1)
-        self._root.addWidget(self.bar)
-        self.cancel_btn = safe_first(make_button("Cancel"))
-        self.cancel_btn.clicked.connect(self._cancel)
-        self.add_buttons(self.cancel_btn)
-
-    def on_progress_text(self, text: str) -> None:
-        """'done/total' in bytes, from the download thread."""
-        try:
-            done, total = (int(x) for x in text.split("/"))
-        except ValueError:
-            return
-        mb = done / 1_048_576
-        if total:
-            self.bar.set_value(min(done / total, 1.0))
-            self.message.setText(f"{mb:.0f} of {total / 1_048_576:.0f} MB")
-        else:
-            self.message.setText(f"{mb:.0f} MB")
-
-    def set_message(self, text: str) -> None:
-        self.message.setText(text)
-
-    def starting_installer(self) -> None:
-        self.bar.set_value(1.0)
-        self.message.setText("Checked. Starting the installer: Mud Music Manager closes now and reopens "
-                             "by itself when the update is installed.")
-        self.cancel_btn.setEnabled(False)
-
-    def failed(self, message: str) -> None:
-        """The download or check failed (or was cancelled): say why; the
-        button becomes Close."""
-        self._finished = True
-        if message.startswith("UpdateError: "):  # TaskThread prefixes the exception's type
-            message = message[len("UpdateError: "):]
-        self.message.setText(message)
-        _set_role(self.message, "bad")
-        self.cancel_btn.setText("Close")
-        self.cancel_btn.setEnabled(True)
-
-    def _cancel(self) -> None:
-        if self._finished:
-            self.accept()
-            return
-        self._on_cancel()
-        self.cancel_btn.setEnabled(False)
-        self.message.setText("Cancelling…")
-
-    def reject(self):  # Esc / the window's X: cancel first, close once the download has stopped
-        self._cancel()
 
 
 class BackgroundSyncDialog(BaseDialog):

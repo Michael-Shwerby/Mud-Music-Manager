@@ -50,6 +50,20 @@ State: <data folder>/components/components.json
 
 download_latest_tools() is shared with packaging\\build.ps1, which bundles the
 newest FFmpeg and Deno the same way.
+
+v0.28.0 (Checklist item 60h, Michael 2026-10-14): the app no longer
+downloads single components at all. Updating means installing the newest
+release, which bundles the newest Python, libraries, Deno and FFmpeg
+(.github/workflows/release.yml publishes one by itself when yt-dlp or
+anything else bundled has a newer version; app_update / update_scan install
+it). What stays here: activate() still switches in a staging folder an
+earlier version left ready and drops components that the program's own
+copies have caught up with (an app update brings newer ones; by
+bundled_versions.json and bundled_libraries.json, any library by its
+wheel's RECORD, _remove_dist()), so a copy updated from v0.22-v0.27 ends up
+on its release's versions; reset_to_built_in() / describe() for Settings;
+current_versions(); and latest_versions() / download_latest_tools(), which
+packaging\build.ps1 uses to bundle the newest Deno and FFmpeg.
 """
 
 import hashlib
@@ -60,26 +74,25 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import zipfile
 from importlib import metadata
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import app_paths
 
 ENABLE_ENV = "MMM_COMPONENTS_ENABLE"   # "1": also when running from source (tests)
 TRY_ENV = "MMM_COMPONENTS_DIR"         # use this folder instead (the self-test of staged components)
-CHECK_EVERY_SECONDS = 12 * 3600
 TIMEOUT = 20
-SELFTEST_TIMEOUT = 300
 
-NAMES = ("yt-dlp", "yt-dlp-ejs", "deno", "ffmpeg")
+NAMES = ("yt-dlp", "yt-dlp-ejs", "deno", "ffmpeg")      # shown by name in Settings
+TOOLS = ("deno", "ffmpeg")
 PY_PACKAGES = {"yt-dlp": "yt_dlp", "yt-dlp-ejs": "yt_dlp_ejs"}
 FFMPEG_VERSION_URL = "https://www.gyan.dev/ffmpeg/builds/release-version"
 FFMPEG_ZIP_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 DENO_RELEASE_API = "https://api.github.com/repos/denoland/deno/releases/latest"
 DENO_ASSET = "deno-x86_64-pc-windows-msvc.zip"
 BUNDLED_VERSIONS = "bundled_versions.json"
+BUNDLED_LIBRARIES = "bundled_libraries.json"   # v0.28.0: dependency_checker.write_bundled_libraries()
 _NO_WINDOW = 0x08000000 if sys.platform.startswith("win") else 0
 
 
@@ -99,14 +112,15 @@ def enabled() -> bool:
 
 
 def python_enabled() -> bool:
-    """yt-dlp / yt-dlp-ejs are only replaced in the packaged app. Running from
-    source, pip installs and updates them (Check For Updates -> libraries); a
-    copy in the data folder would shadow pip's."""
+    """Libraries are only replaced here in the packaged app. Running from
+    source, pip installs and updates them (v0.28.0: downloaded by the update
+    scan, installed at the next launch); a copy in the data folder would
+    shadow pip's."""
     return app_paths.FROZEN or os.environ.get(ENABLE_ENV) == "1"
 
 
-def managed_names() -> tuple:
-    return NAMES if python_enabled() else tuple(n for n in NAMES if n not in PY_PACKAGES)
+def _norm(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", str(name)).lower()
 
 
 def components_dir() -> str:
@@ -144,13 +158,23 @@ def _vkey(v: str):
 
 
 def bundled_versions() -> Dict[str, str]:
-    """What the program itself ships (written by packaging\\build.ps1)."""
+    """What the program itself ships (written by packaging\\build.ps1): the
+    tools and yt-dlp, and (v0.28.0) every library, by normalised name."""
+    out = {}
     try:
-        with open(app_paths.resource_path(BUNDLED_VERSIONS), encoding="utf-8") as f:
+        with open(app_paths.resource_path(BUNDLED_LIBRARIES), encoding="utf-8-sig") as f:
+            libs = json.load(f).get("libraries") or {}
+        out.update({_norm(k): str(v["version"]) for k, v in libs.items() if v.get("version")})
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        pass
+    try:
+        with open(app_paths.resource_path(BUNDLED_VERSIONS), encoding="utf-8-sig") as f:  # build.ps1 writes a BOM (v0.28.0 fix)
             data = json.load(f)
-        return {k: str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+        if isinstance(data, dict):
+            out.update({k: str(v) for k, v in data.items()})
     except (OSError, ValueError):
-        return {}
+        pass
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -184,12 +208,15 @@ def activate() -> Optional[str]:
                 shutil.rmtree(staging, ignore_errors=True)
                 _save_state(state)
                 notes.append("Components updated: " + ", ".join(f"{k} {v}" for k, v in state["active"].items()))
-            active = _drop_outdated(base, state)
-        else:
-            active = _read_versions_file(trial)
+        # v0.28.0: first on sys.path before anything is imported - _drop_outdated()
+        # imports `packaging`, itself a library that may have been updated
         py = os.path.join(base, "python")
         if python_enabled() and os.path.isdir(py) and any(os.scandir(py)):
             sys.path.insert(0, py)
+        if not trial:
+            active = _drop_outdated(base, state)
+        else:
+            active = _read_versions_file(trial)
         tools = os.path.join(base, "tools")
         if os.path.isdir(tools) and any(os.scandir(tools)):
             parts = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
@@ -219,23 +246,57 @@ def _drop_outdated(base: str, state: dict) -> Dict[str, str]:
 
 
 def _remove_component(base: str, name: str) -> None:
-    if name in PY_PACKAGES:
-        py = os.path.join(base, "python")
-        pkg = PY_PACKAGES[name]
-        for entry in os.listdir(py) if os.path.isdir(py) else []:
-            if entry == pkg or (entry.startswith(pkg + "-") and entry.endswith(".dist-info")):
-                shutil.rmtree(os.path.join(py, entry), ignore_errors=True)
-    elif name == "deno":
+    if name == "deno":
         for f in ("deno.exe", "DENO_LICENSE.txt"):
             _rm(os.path.join(base, "tools", f))
     elif name == "ffmpeg":
         for f in ("ffmpeg.exe", "ffprobe.exe", "FFMPEG_LICENSE.txt", "FFMPEG_README.txt"):
             _rm(os.path.join(base, "tools", f))
+    else:  # a library (v0.28.0: any of them)
+        _remove_dist(os.path.join(base, "python"), name)
+
+
+def _remove_dist(py_dir: str, name: str) -> None:
+    """Remove a library unpacked into py_dir: the files its RECORD lists, the
+    folders they leave empty (and their __pycache__), and its .dist-info."""
+    if not os.path.isdir(py_dir):
+        return
+    key = _norm(name)
+    for entry in os.listdir(py_dir):
+        if not entry.endswith(".dist-info") or _norm(entry[:-len(".dist-info")].rsplit("-", 1)[0]) != key:
+            continue
+        info = os.path.join(py_dir, entry)
+        tops = set()
+        try:
+            with open(os.path.join(info, "RECORD"), encoding="utf-8") as f:
+                rows = f.read().splitlines()
+        except OSError:
+            rows = []
+        for row in rows:
+            rel = row.split(",", 1)[0].strip()
+            parts = rel.replace("\\", "/").split("/")
+            if not rel or rel.startswith("/") or ".." in parts or parts[0].endswith(".dist-info"):
+                continue
+            tops.add(parts[0])
+            _rm(os.path.join(py_dir, *parts))
+        for top in tops:
+            path = os.path.join(py_dir, top)
+            if not os.path.isdir(path):
+                continue
+            for root, dirs, _files in os.walk(path, topdown=False):
+                for d in dirs:
+                    if d == "__pycache__":
+                        shutil.rmtree(os.path.join(root, d), ignore_errors=True)
+                try:
+                    os.rmdir(root)  # only when empty
+                except OSError:
+                    pass
+        shutil.rmtree(info, ignore_errors=True)
 
 
 def _read_versions_file(base: str) -> Dict[str, str]:
     try:
-        with open(os.path.join(base, "versions.json"), encoding="utf-8") as f:
+        with open(os.path.join(base, "versions.json"), encoding="utf-8-sig") as f:
             return json.load(f)
     except (OSError, ValueError):
         return {}
@@ -268,6 +329,9 @@ def describe() -> List[str]:
         else:
             origin = "built in"
         lines.append(f"{name} {v} ({origin})" if name in cur else f"{name}: not found")
+    others = sorted(k for k in active if k not in NAMES)  # v0.28.0: every pure-Python library
+    if others:
+        lines.append("also updated: " + ", ".join(f"{k} {active[k]}" for k in others))
     if state.get("staged") == "ready":
         lines.append("Newer versions are ready and will be used from the next launch.")
     if state.get("reset"):
@@ -324,27 +388,11 @@ def _get(url: str, **kw):
     return r
 
 
-def _pypi_wheel(name: str, version: Optional[str] = None) -> dict:
-    url = f"https://pypi.org/pypi/{name}/{version}/json" if version else f"https://pypi.org/pypi/{name}/json"
-    data = _get(url).json()
-    for f in data.get("urls", []):
-        if f.get("packagetype") == "bdist_wheel" and f.get("filename", "").endswith("-py3-none-any.whl"):
-            return {"version": data["info"]["version"], "url": f["url"], "sha256": f["digests"]["sha256"],
-                    "filename": f["filename"], "requires": data["info"].get("requires_dist") or []}
-    raise ComponentError(f"PyPI has no pure-Python file for {name} {data['info']['version']}")
-
-
 def latest_versions() -> Dict[str, dict]:
-    """The newest version of each component and where to get it."""
+    """The newest Deno and FFmpeg and where to get them (packaging/build.ps1
+    and packaging/release_check.py; v0.28.0: the app itself no longer
+    downloads them)."""
     out = {}
-    yt = _pypi_wheel("yt-dlp")
-    out["yt-dlp"] = yt
-    pin = None
-    for req in yt["requires"]:  # the yt-dlp-ejs version this yt-dlp asks for
-        m = re.match(r"yt-dlp-ejs\s*==\s*([\w.]+)", req)
-        if m and 'extra == "default"' in req:
-            pin = m.group(1)
-    out["yt-dlp-ejs"] = _pypi_wheel("yt-dlp-ejs", pin)
     rel = _get_json_github(DENO_RELEASE_API)
     assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
     if DENO_ASSET in assets and DENO_ASSET + ".sha256sum" in assets:
@@ -358,8 +406,11 @@ def latest_versions() -> Dict[str, dict]:
 
 def _get_json_github(url: str) -> dict:
     import requests
-    r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mud-Music-Manager",
-                                                     "Accept": "application/vnd.github+json"})
+    headers = {"User-Agent": "Mud-Music-Manager", "Accept": "application/vnd.github+json"}
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:  # v0.28.0: the release workflow's token (GitHub's machines share the 60-an-hour anonymous limit)
+        headers["Authorization"] = f"Bearer {token}"
+    r = requests.get(url, timeout=TIMEOUT, headers=headers)
     r.raise_for_status()
     return r.json()
 
@@ -394,18 +445,6 @@ def _published_sha256(url: str) -> str:
     if not m:
         raise ComponentError(f"no fingerprint found at {url}")
     return m.group(1).lower()
-
-
-def _unpack_wheel(wheel: str, py_dir: str, package: str) -> None:
-    for entry in os.listdir(py_dir) if os.path.isdir(py_dir) else []:
-        if entry == package or (entry.startswith(package + "-") and entry.endswith(".dist-info")):
-            shutil.rmtree(os.path.join(py_dir, entry), ignore_errors=True)
-    os.makedirs(py_dir, exist_ok=True)
-    with zipfile.ZipFile(wheel) as z:
-        for member in z.namelist():
-            if member.startswith("/") or ".." in member.split("/"):
-                raise ComponentError("unsafe file name in the download")
-        z.extractall(py_dir)
 
 
 def _unpack_deno(zip_path: str, tools_dir: str) -> None:
@@ -456,113 +495,6 @@ def download_latest_tools(dest_dir: str, on_log=print) -> Dict[str, str]:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return {"deno": latest["deno"]["version"], "ffmpeg": latest["ffmpeg"]["version"]}
-
-
-# ---------------------------------------------------------------------------
-# The check: download, assemble, test, mark ready
-# ---------------------------------------------------------------------------
-
-def check_and_stage(force: bool = False, on_log: Optional[Callable[[str], None]] = None,
-                    selftest_cmd: Optional[List[str]] = None) -> List[str]:
-    """Look for newer components; download, assemble and test them in the
-    staging folder; mark it ready for the next launch if the self-test passes.
-    Returns lines describing what happened (empty if nothing to do). Never
-    raises (problems are returned / logged)."""
-    import logger
-    log = on_log or (lambda m: None)
-    if not enabled():
-        return []
-    state = load_state()
-    if not force and time.time() - float(state.get("last_checked") or 0) < CHECK_EVERY_SECONDS:
-        return []
-    if state.get("staged") == "ready":
-        return ["Newer components are ready and will be used from the next launch."]
-    state["last_checked"] = time.time()
-    _save_state(state)
-    try:
-        latest = latest_versions()
-    except Exception as e:
-        logger.log_event(f"Components: couldn't check for newer versions ({type(e).__name__}: {e})")
-        return [f"Couldn't check for newer components ({type(e).__name__})."]
-    current = current_versions()
-    failed = state.get("failed") or {}
-    wanted = [n for n in managed_names() if n in latest
-              and _vkey(latest[n]["version"]) > _vkey(current.get(n, "0"))
-              and latest[n]["version"] not in failed.get(n, [])]
-    # yt-dlp and yt-dlp-ejs go together (the ejs version is the one yt-dlp asks for)
-    if ("yt-dlp" in wanted and "yt-dlp-ejs" not in wanted and "yt-dlp-ejs" in latest
-            and latest["yt-dlp-ejs"]["version"] != current.get("yt-dlp-ejs")):
-        wanted.append("yt-dlp-ejs")
-    if not wanted:
-        logger.log_event("Components: all up to date (" + ", ".join(f"{k} {v}" for k, v in sorted(current.items())) + ")")
-        return []
-
-    base = components_dir()
-    staging = os.path.join(base, ".staging")
-    shutil.rmtree(staging, ignore_errors=True)
-    for part in ("python", "tools"):  # start from what is in use now
-        if os.path.isdir(os.path.join(base, part)):
-            shutil.copytree(os.path.join(base, part), os.path.join(staging, part))
-    os.makedirs(staging, exist_ok=True)
-    versions = dict(state.get("active") or {})
-    tmp = tempfile.mkdtemp(prefix="mmm_components_")
-    try:
-        for name in wanted:
-            info = latest[name]
-            log(f"Updating {name} {current.get(name, '?')} -> {info['version']}")
-            if name in PY_PACKAGES:
-                whl = os.path.join(tmp, info["filename"])
-                _download(info["url"], whl, info["sha256"], log)
-                _unpack_wheel(whl, os.path.join(staging, "python"), PY_PACKAGES[name])
-            else:
-                z = os.path.join(tmp, f"{name}.zip")
-                _download(info["url"], z, _published_sha256(info["sha256_url"]), log)
-                (_unpack_deno if name == "deno" else _unpack_ffmpeg)(z, os.path.join(staging, "tools"))
-            versions[name] = info["version"]
-    except Exception as e:
-        shutil.rmtree(staging, ignore_errors=True)
-        logger.log_event(f"Components: update stopped ({type(e).__name__}: {e}); nothing changed")
-        return [f"Couldn't update the components ({e}). Nothing was changed."]
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-    with open(os.path.join(staging, "versions.json"), "w", encoding="utf-8") as f:
-        json.dump(versions, f)
-
-    log("Testing them (self-test with a test download)…")
-    ok, output = _run_selftest(staging, selftest_cmd)
-    state = load_state()
-    if not ok:
-        shutil.rmtree(staging, ignore_errors=True)
-        for name in wanted:
-            state.setdefault("failed", {}).setdefault(name, []).append(latest[name]["version"])
-        _save_state(state)
-        logger.log_error("Components: the new versions failed the self-test and were discarded:\n" + output[-2000:])
-        return ["Newer components were found but failed the self-test, so the current ones stay in use: "
-                + ", ".join(f"{n} {latest[n]['version']}" for n in wanted) + "."]
-    state["staged"] = "ready"
-    state["staged_versions"] = versions
-    _save_state(state)
-    summary = ", ".join(f"{n} {latest[n]['version']}" for n in wanted)
-    logger.log_event(f"Components: {summary} downloaded, checked and tested; used from the next launch")
-    return [f"Updated {summary} (checked and tested); used from the next launch."]
-
-
-def _run_selftest(staging: str, cmd: Optional[List[str]] = None):
-    """The app's own self-test against the staging folder."""
-    if cmd is None:
-        if app_paths.FROZEN:
-            cmd = [app_paths.cli_exe(), "--selftest"]
-        else:  # from source: the console Python (the app itself may run under pythonw.exe)
-            import debug_console
-            cmd = [debug_console.console_python_executable(), os.path.join(app_paths.APP_DIR, "main.py"),
-                   "--selftest"]
-    env = dict(os.environ, **{TRY_ENV: staging, "PYTHONIOENCODING": "utf-8"})
-    try:
-        p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           stdin=subprocess.DEVNULL, timeout=SELFTEST_TIMEOUT, creationflags=_NO_WINDOW)
-    except (OSError, subprocess.SubprocessError) as e:
-        return False, f"couldn't run the self-test: {e}"
-    return p.returncode == 0, (p.stdout or "") + (p.stderr or "")
 
 
 def _rm(path: str) -> None:

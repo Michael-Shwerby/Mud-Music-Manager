@@ -37,6 +37,7 @@ PROJECT_MODULES = (
     "metadata_tagger", "lyrics_provider", "youtube_matcher", "spotify_reader", "youtube_playlist_reader",
     "ytmusic_reader", "soundcloud_reader", "apple_music_reader", "amazon_music_reader", "acquisition_engine",
     "library_sync", "playlist_file", "scheduled_sync", "device_copy", "artist_watch", "dependency_checker", "ui_libraries",
+    "update_scan", "bootstrap",  # v0.28.0 (Checklist items 60h, 60i)
 )
 # Libraries a project module imports only when first used (v0.23.3).
 LAZY_LIBRARIES = ("spotapi", "spotapi.http.request", "SpotipyFree", "SpotipyFree.Formatter", "syncedlyrics")
@@ -65,6 +66,13 @@ class _Run:
             return self.check(name, True, detail or "")
         except Exception as e:
             return self.check(name, False, f"{type(e).__name__}: {e}")
+
+
+def _library_count(libs: dict) -> str:
+    missing = sorted(lib["name"] for lib in libs.values() if not lib.get("version"))
+    if missing:
+        raise RuntimeError("not found: " + ", ".join(missing))
+    return f"{len(libs)} libraries"
 
 
 def run(download: bool = True) -> int:
@@ -110,6 +118,9 @@ def run(download: bool = True) -> int:
     import component_updates
     r.attempt("component versions", lambda: ", ".join(f"{k} {v}" for k, v in sorted(
         component_updates.current_versions().items())))
+    # v0.28.0 (Checklist item 60h): the list of libraries the update scan checks
+    import dependency_checker
+    r.attempt("libraries the update check covers", lambda: _library_count(dependency_checker.installed_libraries()))
 
     if download:
         print("\nDownload")

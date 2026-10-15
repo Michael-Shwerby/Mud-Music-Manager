@@ -55,10 +55,23 @@ _DATA_DIR_NOTE = app_paths.prepare_data_dir() if __name__ == "__main__" else Non
 _TOOLS_DIR = app_paths.add_tools_to_path() if __name__ == "__main__" else None
 # v0.22.0 (Checklist item 60g): newer yt-dlp / yt-dlp-ejs / Deno / FFmpeg the
 # packaged app downloaded and tested go ahead of the built-in ones (a staged
-# update is switched in here, before anything uses them).
+# update is switched in here, before anything uses them). v0.28.0: every
+# pure-Python library too; running from source, pip installs the library
+# updates the update scan downloaded (before any of them is imported).
 import component_updates
 
 _COMPONENTS_NOTE = component_updates.activate() if __name__ == "__main__" else None
+
+# v0.28.0 (Checklist item 60i): running from source, every library in
+# requirements.txt must be installed for the Python running the app (a new
+# Python version line, or a fresh copy, has none). Missing ones are offered
+# for installing here, before the first library import below; no asking from
+# the self-test or a scheduled sync.
+import bootstrap
+
+if __name__ == "__main__" and not bootstrap.ensure_requirements(
+        interactive=not ({"--selftest", "--scheduled-sync"} & set(sys.argv[1:]))):
+    sys.exit(1)
 
 from datetime import datetime
 from pathlib import Path
@@ -72,7 +85,6 @@ import app_update
 import artist_watch
 import library_sync
 import exceptions_manager
-import dependency_checker
 import download_settings
 import logger
 import metadata_tagger
@@ -80,6 +92,7 @@ import scheduled_sync
 import track_failures
 import ui_libraries
 import ui_settings
+import update_scan
 import user_data
 import youtube_cookies
 
@@ -117,7 +130,7 @@ MAIN_MENU_ACTIONS = {
     "scan": ["scan"],
     "check": ["check integrity", "check", "integrity", "check for issues"],
     "change_path": ["change music folder path", "change", "path", "folder"],
-    "update": ["update project libraries", "update"],
+    "update": ["update mud music manager", "update project libraries", "update"],  # v0.28.0: the app's releases
     "settings": ["settings", "setting"],
     "done": ["done"],
 }
@@ -372,21 +385,18 @@ def _require_library_path(config):
     return library_path
 
 
-def _dependency_status_line(dep_statuses):
+def _dependency_status_line(report):
     """
-    Human-readable status for the "Update Project Libraries" menu line.
-    Per Checklist item 1: prefixed with a quick-glance emoji so Michael
+    Human-readable status for the "Update Mud Music Manager" menu line (v0.28.0; was Update Project Libraries).
+    Per Checklist item 1: prefixed with a quick-glance mark so Michael
     doesn't have to read the text to know whether anything needs
-    attention -- âœ… when everything's current, âœ— when at least one
-    tracked package has a newer version available.
+    attention. v0.28.0 (Checklist item 60h): the update scan's line, for
+    everything the app uses (update_scan.summary()).
     """
-    if dependency_checker.BUNDLED:  # v0.19.1: packaged build
-        return dependency_checker.BUNDLED_NOTE + "."
-    outdated = [s for s in dep_statuses if s.outdated]
-    if outdated:
-        names = ", ".join(s.name for s in outdated)
-        return f"âœ— {len(outdated)} update(s) available: {names}"
-    return "âœ… All up to date."
+    view = update_scan.summary(report)
+    mark = "[!]" if view.tone == "warn" else "[ok]"
+    text = view.message.replace("see \u24d8", "type Update for the list")
+    return f"{mark} {text.replace(chr(0x2014), '-').replace(chr(0x2026), '...')}"
 
 
 def _pick_folder_dialog(title="Select the Music Library folder"):
@@ -1265,9 +1275,11 @@ def handle_set_library_path(config):
 def _offer_app_update(app_status):
     """Installed app (v0.21.0, Checklist item 60e): download, check and start
     the new version's installer, then end the menu; the installer reopens the
-    app. Not from a menu opened by the app's CMD button (the app is open)."""
+    app. v0.28.0: a portable copy downloads its portable .zip and swaps its
+    program files the same way. Not from a menu opened by the app's CMD
+    button (the app is open)."""
     if os.environ.get(debug_console.CLI_FROM_GUI_ENV):
-        print("  To install it, use Check For Updates -> Update now in the app.")
+        print("  To install it, use Update & Restart MMM in the app.")
         return
     if app_update.installed_for_all_users():  # v0.22.0
         print("  This copy is installed for all users: Windows will ask for administrator permission.")
@@ -1285,53 +1297,26 @@ def _offer_app_update(app_status):
             print(f"  Downloading... {pct}%" if pct >= 0 else f"  Downloading... {done // 1_048_576} MB")
 
     try:
-        path = app_update.download_installer(app_status, on_progress=progress)
+        path = app_update.download_update(app_status, on_progress=progress)
         print("  Checked: the download matches the release's fingerprint.")
-        app_update.launch_installer(path)
+        app_update.launch_update(path)
     except app_update.UpdateError as e:
         print(f"  {e}")
         return
-    print("  The installer is running. Mud Music Manager reopens when it's done. Goodbye!")
+    print("  Updating. Mud Music Manager reopens when it's done. Goodbye!")
     sys.exit(0)
 
 
-def handle_update_libraries(dep_statuses, app_status=None):
-    # v0.19.0 (Checklist item 60b): a newer Mud Music Manager first, with its page.
-    if app_status is not None:
-        print(f"\n{app_status.summary()}.")
-        if app_status.outdated:
-            print(f"  Download it from: {app_status.page_url}")
-            print("  (Your playlists, settings and music stay as they are.)")
-            if app_status.can_install():  # v0.21.0 (Checklist item 60e): the installed app
-                _offer_app_update(app_status)
-    if component_updates.enabled():  # v0.22.0 (Checklist item 60g): yt-dlp / Deno / FFmpeg
-        print("\nChecking yt-dlp, yt-dlp-ejs, Deno and FFmpeg for newer versions...")
-        lines = component_updates.check_and_stage(force=True, on_log=lambda m: print(f"  {m}"))
-        print("  " + (" ".join(lines) if lines else "All up to date."))
-    if dependency_checker.BUNDLED:  # v0.19.1: no pip in a packaged build
-        print(f"\n{dependency_checker.BUNDLED_NOTE}.")
-        return dep_statuses
-    outdated = [s for s in dep_statuses if s.outdated]
-    if not outdated:
-        print("\nAll project libraries are up to date.")
-        return dep_statuses
-
-    print(f"\n{len(outdated)} package(s) have updates available:")
-    for s in outdated:
-        print(f"  - {s.name}: {s.installed_version} -> {s.latest_version}")
-
-    confirm = input("Update them now? (y/n): ").strip().lower()
-    if confirm != "y":
-        print("Cancelled -- nothing updated.")
-        return dep_statuses
-
+def handle_update_libraries(report):
+    """v0.28.0 (Checklist item 60h): Update checks for a newer Mud Music
+    Manager release (which bundles the newest libraries, Deno and FFmpeg)
+    and offers to install it in the installed or portable app."""
+    report = update_scan.scan()  # ask again: the menu may have been open a while
     print()
-    results = dependency_checker.update_outdated(dep_statuses)
-    for line in results:
-        print(line)
-    print("\nRestart Mud Music Manager for these updates to actually take effect.")
-
-    return dependency_checker.check_all()
+    print(update_scan.text_report(report))
+    if report.app.can_self_update():  # v0.21.0 (Checklist item 60e); portable v0.28.0
+        _offer_app_update(report.app)
+    return report
 
 
 # ---------------------------------------------------------------------------
@@ -1716,9 +1701,8 @@ def run_cli():
 
     config = config_manager.load_config()
 
-    print("Checking for updates...")
-    dep_statuses = dependency_checker.check_all()
-    app_status = app_update.check_latest()  # v0.19.0 (Checklist item 60b)
+    print("Checking for updates (the app, Python, every library, Deno and FFmpeg)...")
+    report = update_scan.scan()  # v0.28.0 (Checklist item 60h)
 
     while True:
         print("\n" + "=" * 50)
@@ -1736,11 +1720,11 @@ def run_cli():
         print()
         print("\tChange Music Folder Path")
         print("\tSettings")
-        print("\tUpdate Project Libraries")
-        print(f"\t   {_dependency_status_line(dep_statuses)}")
-        if app_status.outdated:  # v0.19.0: only when there is something newer
-            print(f"\t   {app_status.summary()} -- type Update "
-                  f"{'to install it' if app_status.can_install() else 'for the link'}")
+        print("\tUpdate Mud Music Manager")
+        print(f"\t   {_dependency_status_line(report)}")
+        if report.app.outdated:  # v0.19.0: only when there is something newer
+            print(f"\t   {report.app.summary()} -- type Update "
+                  f"{'to install it' if report.app.can_self_update() else 'for the link'}")
         print()
         print("Done")
 
@@ -1768,7 +1752,7 @@ def run_cli():
             elif action == "change_path":
                 handle_set_library_path(config)
             elif action == "update":
-                dep_statuses = handle_update_libraries(dep_statuses, app_status)
+                report = handle_update_libraries(report)
             elif action == "settings":
                 handle_settings(config)
             elif action == "done":

@@ -6,7 +6,7 @@ sync, diff, download, tagging or config logic of its own: every task
 below just calls the same functions main.py's terminal menu already
 calls (library_sync.sync_playlist / scan_playlist /
 check_playlist_integrity / fix_track, config_manager.*,
-exceptions_manager.*, dependency_checker.*), on a background thread, and
+exceptions_manager.*, update_scan.*), on a background thread, and
 turns their plain-text progress callbacks into Qt signals. All the
 protected systems (design doc §3.3 diff, §3.4 matching, §3.8 crash
 safeguards) are untouched.
@@ -51,10 +51,8 @@ from PySide6.QtGui import QImage
 
 import acquisition_engine
 import app_update
-import component_updates
 import config_manager
 import debug_console
-import dependency_checker
 import exceptions_manager
 import library_sync
 import logger
@@ -62,6 +60,7 @@ import metadata_tagger
 import spotify_reader
 import track_failures
 import ui_settings
+import update_scan
 
 
 # ---------------------------------------------------------------------------
@@ -1235,27 +1234,19 @@ def _forget_cached_missing(entry: dict, keys: List[str]) -> None:
     )
 
 
-def check_updates_task() -> Callable:
-    """The libraries (dependency_checker) and, since v0.19.0 (Checklist item
-    60b), whether a newer Mud Music Manager is published (app_update):
-    {"libraries": [PackageStatus], "app": AppUpdateStatus}."""
+def update_scan_task() -> Callable:
+    """v0.28.0 (Checklist item 60h): the update check - is a newer release
+    published (update_scan.scan())? Returns its UpdateReport. (Replaces
+    v0.19.0's library + app check and v0.22.0's component task.)"""
     def fn(thread: TaskThread):
-        return {"libraries": dependency_checker.check_all(), "app": app_update.check_latest()}
-    return fn
-
-
-def component_update_task(force: bool) -> Callable:
-    """v0.22.0 (Checklist item 60g): look for newer yt-dlp / yt-dlp-ejs / Deno /
-    FFmpeg, download, check and test them (component_updates.check_and_stage);
-    returns its lines (empty when there was nothing to do)."""
-    def fn(thread: TaskThread):
-        return component_updates.check_and_stage(force=force, on_log=thread.progress.emit)
+        return update_scan.scan()
     return fn
 
 
 def download_update_task(status, cancel: dict) -> Callable:
     """Update now (v0.21.0, Checklist item 60e): download and check the
-    release's installer (app_update.download_installer). Progress goes out as
+    release's installer (v0.28.0: or, in a portable copy, its portable .zip;
+    app_update.download_update - Update & Restart MMM). Progress goes out as
     'done/total' bytes, at most once per percent; cancel["stop"] = True stops
     it. Returns the installer's path; an app_update.UpdateError ends up in
     the thread's failed signal with its message."""
@@ -1268,15 +1259,8 @@ def download_update_task(status, cancel: dict) -> Callable:
                 last["pct"] = pct
                 thread.progress.emit(f"{done}/{total}")
 
-        return app_update.download_installer(status, on_progress=progress,
-                                             should_cancel=lambda: bool(cancel.get("stop")))
-    return fn
-
-
-def install_updates_task(statuses) -> Callable:
-    def fn(thread: TaskThread):
-        lines = dependency_checker.update_outdated(statuses)
-        return {"lines": lines, "statuses": dependency_checker.check_all()}
+        return app_update.download_update(status, on_progress=progress,
+                                          should_cancel=lambda: bool(cancel.get("stop")))
     return fn
 
 

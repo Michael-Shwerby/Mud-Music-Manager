@@ -1,0 +1,130 @@
+# Mud Music Manager - automatic releases (v0.28.0, Checklist items 60f / 60h)
+#
+# Runs on GitHub's machines (nothing runs on your PC). Every day it checks
+# whether a release is due (packaging/release_check.py check):
+#   - daily:   yt-dlp has a newer stable release (YouTube fixes land there), or
+#              app_info.VERSION on main is newer than the latest release;
+#   - Mondays: also FFmpeg, a new Deno x.y line, a Python patch on the same
+#              3.x line, or a library in requirements.txt has a newer version.
+# If one is due it builds the installer and portable .zip on Windows with
+# packaging/build.ps1 (newest libraries, Deno, FFmpeg; self-test without the
+# test download - YouTube often blocks GitHub's machines), commits the new
+# version number and its RELEASE_NOTES.md entry to main, tags it and
+# publishes the release with the files the app's update needs. Installed and
+# portable copies then offer it through Update & Restart MMM.
+#
+# Run it by hand: Actions tab -> "Automatic release" -> Run workflow
+# (force: build even if nothing changed; publish off: build and test only,
+# the files are kept as a downloadable artifact for 7 days).
+
+name: Automatic release
+
+on:
+  schedule:
+    - cron: "17 6 * * *"          # every day, 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build even if nothing changed"
+        type: boolean
+        default: false
+      publish:
+        description: "Publish the release (off: build and test only)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write                 # commit the version, tag, publish the release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+      version: ${{ steps.check.outputs.version }}
+      reason: ${{ steps.check.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install requests packaging
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=""
+          if [ "$(date -u +%u)" = "1" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then args="$args --weekly"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then args="$args --force"; fi
+          python packaging/release_check.py check $args
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      PUBLISH: ${{ github.event_name == 'schedule' || inputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          check-latest: true      # the newest 3.14.x: Python patches reach the app too
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Version
+        run: |
+          pip install requests packaging
+          python packaging/release_check.py set-version $env:VERSION
+
+      - name: Build (installer, portable .zip, self-test)
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -NoDownload
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Release notes
+        run: |
+          python packaging/release_check.py notes $env:VERSION "dist/Mud Music Manager/_internal/bundled_versions.json" release/NOTES.md
+          Copy-Item "dist/Mud Music Manager/_internal/bundled_versions.json", "dist/Mud Music Manager/_internal/bundled_libraries.json" release/
+
+      - name: Keep the files (test run)
+        if: env.PUBLISH != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MudMusicManager-${{ env.VERSION }}
+          path: release/
+          retention-days: 7
+
+      - name: Publish
+        if: env.PUBLISH == 'true'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app_info.py RELEASE_NOTES.md
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "v$env:VERSION - automatic release (${{ needs.check.outputs.reason }})"
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          git tag "v$env:VERSION"
+          git push origin HEAD:main "v$env:VERSION"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          gh release create "v$env:VERSION" --title "Mud Music Manager v$env:VERSION" --notes-file release/NOTES.md `
+            "release/MudMusicManager-Setup-$env:VERSION.exe" "release/MudMusicManager-Portable-$env:VERSION.zip" `
+            release/SHA256SUMS.txt release/bundled_versions.json release/bundled_libraries.json
+          if ($LASTEXITCODE -ne 0) { exit 1 }

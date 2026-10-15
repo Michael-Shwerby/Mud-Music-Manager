@@ -612,6 +612,26 @@ class PillLabel(QLabel):
         p.drawText(text_rect, Qt.AlignCenter, self.text())
 
 
+class ClickablePill(PillLabel):
+    """A PillLabel that can be clicked (v0.28.0: the header's version pill
+    opens what the update check found). click() lets the keyboard press it
+    like a button (ui_keys.press)."""
+
+    clicked = Signal()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def click(self) -> None:
+        self.clicked.emit()
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(e)
+
+
 class ElidedLabel(QLabel):
     """Single-line label that elides with '...' instead of forcing the
     layout wider."""
@@ -917,7 +937,7 @@ class ThumbLabel(QWidget):
 
 class GlyphButton(QAbstractButton):
     """Paint-it-yourself icon button. kind: up, down, chev_up, chev_down,
-    prev, next, play, pause, cmd, gear, close. ring=True draws a circular
+    prev, next, play, pause, cmd, gear, close, info. ring=True draws a circular
     outline (the big player buttons).
 
     height (v0.16.34, Checklist item 35): a button shorter than it is wide
@@ -1102,6 +1122,16 @@ class GlyphButton(QAbstractButton):
             path.closeSubpath()
             p.drawPath(path)
             p.drawEllipse(c, r_in, r_in)
+        elif k == "info":  # v0.28.0: what the update check found
+            pen = QPen(col, max(1.6, s * 0.06))
+            p.setPen(pen)
+            p.setBrush(Qt.NoBrush)
+            c = QPointF(s / 2, s / 2)
+            p.drawEllipse(c, s * 0.27, s * 0.27)
+            p.setPen(Qt.NoPen)
+            p.setBrush(col)
+            p.drawEllipse(QPointF(s / 2, s * 0.37), s * 0.04, s * 0.04)
+            p.drawRoundedRect(QRectF(s * 0.465, s * 0.45, s * 0.07, s * 0.21), s * 0.03, s * 0.03)
 
     def enterEvent(self, e):
         self._animate_hover(True)
@@ -1953,3 +1983,48 @@ class OverlayHost(QWidget):
                 w.setFocus(Qt.TabFocusReason if next_ else Qt.BacktabFocusReason)
                 return True
         return True
+
+
+class TinyProgressBar(SegmentedProgressBar):
+    """A 5 px SegmentedProgressBar (v0.28.0: under Update & Restart MMM)."""
+    BAR_HEIGHT = 5
+
+
+class UpdateRestartBox(QWidget):
+    """Update & Restart MMM (v0.28.0, Checklist item 60h), shared by the
+    header and Settings → Updates: the button, a thin progress bar under it
+    while the updates download (set_progress(0..1); None hides it), and a
+    small "(This may take a minute*)" note (Michael's wording)."""
+
+    NOTE = "(This may take a minute*)"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(3)
+        self.button = make_button("Update && Restart MMM", "primary")
+        self.button.setToolTip("Download the updates, then close Mud Music Manager and open it again with them")
+        lay.addWidget(self.button)
+        self.bar = TinyProgressBar()
+        self.bar.set_segments(1)
+        self.bar.hide()
+        lay.addWidget(self.bar)
+        self.note = QLabel(self.NOTE)
+        self.note.setProperty("role", "faint")
+        f = self.note.font()
+        f.setPointSizeF(max(8.0, f.pointSizeF() - 1.0))
+        self.note.setFont(f)
+        self.note.setAlignment(Qt.AlignCenter)
+        lay.addWidget(self.note)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+    def set_progress(self, fraction: Optional[float]) -> None:
+        if fraction is None:
+            self.bar.hide()
+            self.bar.set_value(0.0)
+            self.button.setEnabled(True)
+            return
+        self.bar.show()
+        self.bar.set_value(max(0.0, min(1.0, fraction)))
+        self.button.setEnabled(False)

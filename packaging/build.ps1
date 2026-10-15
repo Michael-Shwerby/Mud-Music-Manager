@@ -12,7 +12,8 @@ Builds the packaged Mud Music Manager (v0.19.1, Checklist item 60c).
    folder. By default (v0.22.0) the NEWEST official builds are downloaded
    (gyan.dev FFmpeg essentials, Deno's GitHub release), each checked against
    its published SHA-256. -UseLocalTools copies this computer's instead
-   (-FfmpegDir / -DenoExe name others). Writes _internal\bundled_versions.json.
+   (-FfmpegDir / -DenoExe name others). Writes _internal\bundled_versions.json
+   and (v0.28.0) _internal\bundled_libraries.json, every library in the build.
    Their licence texts go beside them (FFMPEG_LICENSE.txt, FFMPEG_README.txt
    from the FFmpeg build's folder; DENO_LICENSE.txt from packaging\licenses).
 4. Runs the build's self-test (Mud Music Manager CLI.exe --selftest).
@@ -111,9 +112,19 @@ $denoV = [regex]::Match((& (Join-Path $Tools "deno.exe") --version | Out-String)
 $ffV = [regex]::Match((& (Join-Path $Tools "ffmpeg.exe") -hide_banner -version | Out-String), 'ffmpeg version (\d+(\.\d+)+)').Groups[1].Value
 $pyV = & $Py -c "from importlib import metadata as m; print(m.version('yt-dlp') + ' ' + m.version('yt-dlp-ejs'))"
 $ytV, $ejsV = "$pyV".Trim().Split(" ")
-$bundled = [ordered]@{ "yt-dlp" = $ytV; "yt-dlp-ejs" = $ejsV; "deno" = $denoV; "ffmpeg" = $ffV }
+$pyRun = (& $Py -c "import platform; print(platform.python_version())" | Out-String).Trim()  # v0.28.0
+$bundled = [ordered]@{ "yt-dlp" = $ytV; "yt-dlp-ejs" = $ejsV; "deno" = $denoV; "ffmpeg" = $ffV; "python" = $pyRun }
 $bundled | ConvertTo-Json | Set-Content (Join-Path $App "_internal\bundled_versions.json") -Encoding UTF8
 Write-Host ("Bundled: " + (($bundled.GetEnumerator() | ForEach-Object { "$($_.Key) $($_.Value)" }) -join ", "))
+# v0.28.0 (Checklist item 60h): every library in the build (requirements.txt and what
+# it needs), its version and whether it has compiled parts. The release workflow
+# attaches it to each release; packaging/release_check.py compares it with PyPI.
+$savedData = $env:MMM_DATA_DIR
+$env:MMM_DATA_DIR = Join-Path $BuildRoot "build\helper-data"
+& $Py -c "import sys; sys.path.insert(0, r'$Project'); import dependency_checker as d; print(d.write_bundled_libraries(r'$App\_internal\bundled_libraries.json'), 'libraries recorded')"
+$code = $LASTEXITCODE
+$env:MMM_DATA_DIR = $savedData
+if ($code -ne 0) { throw "Recording the bundled libraries failed" }
 
 if (-not $SkipSelfTest) {
     Write-Host "Running the self-test ..."

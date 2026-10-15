@@ -2,6 +2,13 @@
 
 What changed in each version, newest first.
 
+## v0.28.0 (2026-10-14)
+- **Updating is one click:** when a new version is out, **Update & Restart MMM** appears at the top. It downloads the new version (a small bar shows the progress, and you can cancel), installs it and reopens the app. Your playlists, settings and music stay as they are.
+- **Each new version brings the newest yt-dlp, Deno, FFmpeg, Python and libraries**, and new versions are published automatically whenever yt-dlp gets a fix, so downloads keep working when YouTube changes.
+- **The portable version updates itself too** (it used to need a manual download).
+- **Click the version number** at the top to see what's new and what this copy runs on.
+- Running from source: after you install a new version of Python, the app offers to download everything it needs for it the next time you start it.
+
 ## v0.27.0 (2026-10-14)
 - **Support Mud Music Manager:** a glowing heart button in the bottom right of the Main Menu opens a short note from the developer, with a link to his Ko-fi page if you'd like to support the project. It's also in Settings → About (Support Mud Music Manager). Mud Music Manager stays free.
 

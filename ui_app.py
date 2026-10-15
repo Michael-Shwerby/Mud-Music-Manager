@@ -39,6 +39,18 @@ before the library updates.
 v0.21.0 (Checklist item 60e): in the installed app that dialog's Update now
 downloads and checks the installer (ui_dialogs.UpdateDownloadDialog), starts
 it and closes the app; the installer reopens it (_start_app_update()).
+
+v0.28.0 (Checklist item 60h): updating means installing the newest release
+(it bundles the newest Python, libraries, Deno and FFmpeg). At launch and on
+Check For Updates update_scan.py asks GitHub for it; nothing pops up:
+clicking the version pill opens what the check found
+(ui_dialogs.UpdateDetailsDialog), and "Update & Restart MMM" shows when a
+newer release can be installed here (installed app or portable copy).
+Clicking it downloads the installer / portable .zip with a thin progress bar
+under the button (which turns into Cancel), then app_update.launch_update()
+installs it and the app closes; the installer / portable swap reopens it.
+(Replaces v0.21.0's Update now dialog.) Up to date: the pill stays green and
+Check For Updates says so.
 """
 
 import gc
@@ -55,9 +67,7 @@ from PySide6.QtWidgets import (
 
 import app_info
 import app_update
-import component_updates
 import config_manager
-import dependency_checker
 import exceptions_manager
 import logger
 import scheduled_sync
@@ -68,12 +78,14 @@ import ui_dialogs
 import ui_keys
 import ui_settings
 import ui_theme
+import update_scan
 from ui_edit_page import EditPage
 from ui_main_page import MainPage
 from ui_results_page import ResultsPage
 from ui_settings_page import SettingsPage
 from ui_widgets import (
-    AppLogo, GlowBackground, GlyphButton, OverlayHost, PillLabel, Spinner, make_button,
+    AppLogo, ClickablePill, GlowBackground, GlyphButton, OverlayHost, Spinner, UpdateRestartBox,
+    make_button,
 )
 
 try:  # the media backend can be missing on a stripped-down install
@@ -336,11 +348,20 @@ class HeaderBar(QWidget):
         lay.addWidget(self.update_msg)
         lay.addSpacing(6)
 
-        self.version_pill = PillLabel(f"v{version}", "ok", dot=True, height=30)
+        # v0.28.0 (Checklist item 60h): clicking the version opens what the update
+        # check found (Michael's choice, replacing a separate "i" button)
+        self.version_pill = ClickablePill(f"v{version}", "ok", dot=True, height=30)
+        self.version_pill.setToolTip("Click to see what's out of date")
         lay.addWidget(self.version_pill)
 
         self.update_btn = make_button("Check For Updates")
         lay.addWidget(self.update_btn)
+        # v0.28.0: Update & Restart MMM, its "may take a minute" note and progress bar
+        self.restart_box = UpdateRestartBox()
+        self.restart_btn = self.restart_box.button
+        lay.addWidget(self.restart_box)
+        self._restart_on = False
+        self.restart_box.hide()
         self.cmd_btn = GlyphButton("cmd", 38, boxed=True)
         self.cmd_btn.setToolTip("Open the command line")
         lay.addWidget(self.cmd_btn)
@@ -367,8 +388,16 @@ class HeaderBar(QWidget):
             w.show()
 
     def show_update_controls(self, on: bool) -> None:
+        self._controls_on = on
         self.update_btn.setVisible(on)
         self.update_msg.setVisible(on)
+        self.restart_box.setVisible(on and self._restart_on)
+
+    def set_restart_shown(self, restart: bool) -> None:
+        """v0.28.0: Update & Restart MMM (something to download or install);
+        only on the Main Menu, like the rest of the update controls."""
+        self._restart_on = restart
+        self.show_update_controls(getattr(self, "_controls_on", True))
 
     def set_version_tone(self, tone: str) -> None:
         self.version_pill.set_tone(tone)
@@ -393,8 +422,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_TITLE} — v{ctx.version}")
         self.resize(1280, 800)
         self.setMinimumSize(1080, 680)
-        self._dep_statuses = None
         self._app_update = None  # app_update.AppUpdateStatus, v0.19.0
+        self._report = None      # update_scan.UpdateReport, v0.28.0
+        self._checking = self._preparing = self._announce = False
+        self._update_cancel = {"stop": False}
 
         bg = GlowBackground()
         self.setCentralWidget(bg)
@@ -423,12 +454,16 @@ class MainWindow(QMainWindow):
         self.header.cmd_btn.clicked.connect(self.open_cmd)
         self.header.gear_btn.clicked.connect(self.open_settings)
         self.header.update_btn.clicked.connect(self.check_updates)
+        self.header.version_pill.clicked.connect(self.show_update_details)  # v0.28.0
+        self.header.restart_btn.clicked.connect(self.update_and_restart)
         self.main_page.openEdit.connect(self.open_edit)
         self.main_page.openResults.connect(self.open_results)
         self.main_page.refreshRequested.connect(self.start_refresh)
         self.edit_page.backRequested.connect(lambda: self.go(PAGE_MAIN))
         self.settings_page.closeRequested.connect(self.overlay.close_overlay)
         self.settings_page.checkUpdatesRequested.connect(self.check_updates)
+        self.settings_page.restartRequested.connect(self.update_and_restart)
+        self.settings_page.updateInfoRequested.connect(self.show_update_details)
         self.results_page.closeRequested.connect(self.overlay.close_overlay)
         self.results_page.changed.connect(self.main_page.reload_stats_only)
         ctx.backend.busyChanged.connect(self.main_page.set_busy)
@@ -557,8 +592,7 @@ class MainWindow(QMainWindow):
     def start_background_work(self) -> None:
         """Called once the window is on screen. The playlist Scan is
         skipped when Settings → Scan on launch is Off (v0.16.17)."""
-        self.run_update_check(announce=False)
-        self.run_component_update(force=False)  # v0.22.0: at most every 12 hours
+        self.run_update_check(announce=False)  # v0.28.0: everything, at every launch
         if scheduled_sync.supported() and scheduled_sync.get_setting()["enabled"]:
             # v0.25.0: re-create the task, so it points at this copy (moved, updated)
             threading.Thread(target=scheduled_sync.apply, name="scheduled-sync-task", daemon=True).start()
@@ -585,134 +619,131 @@ class MainWindow(QMainWindow):
         self.main_page.on_refresh_finished()
         self.main_page.reload_stats_only()
 
-    # -- library updates ----------------------------------------------------
+    # -- updates (v0.28.0, Checklist item 60h: update_scan.py) -----------------
     def check_updates(self) -> None:
         self.run_update_check(announce=True)
-        self.run_component_update(force=True)  # v0.22.0: Check For Updates checks them now
-
-    # -- component updates (v0.22.0, Checklist item 60g) -----------------------
-    def run_component_update(self, force: bool) -> None:
-        """Newer yt-dlp / yt-dlp-ejs / Deno / FFmpeg for the packaged app, in the
-        background: downloaded, checked, tested; used from the next launch.
-        Quiet unless something was found; the Settings page shows the result."""
-        if not component_updates.enabled() or getattr(self, "_components_running", False):
-            return
-        self._components_running = True
-        thread = self.ctx.backend.run(ui_backend.component_update_task(force), heavy=False)
-        thread.resultReady.connect(self._on_components_done)
-        thread.failed.connect(lambda _m: self._on_components_done([]))
-
-    def _on_components_done(self, lines) -> None:
-        self._components_running = False
-        if self.overlay.is_open() and self.overlay.current_page() is self.settings_page:
-            self.settings_page.refresh_installation()
-        if lines:
-            self.settings_page.set_components_message(" ".join(lines))
 
     def run_update_check(self, announce: bool) -> None:
-        if getattr(self, "_checking", False):
+        """Ask GitHub for the latest release on a worker thread and show the
+        result; nothing is downloaded until Update & Restart MMM. announce:
+        Check For Updates was pressed, so "up to date" gets a message."""
+        if self._checking or self._preparing:
             return
         self._checking = True
-        self.header.set_checking(True, "Checking for updates…")
-        self.header.update_btn.setEnabled(False)
-        self.settings_page.update_btn.setEnabled(False)
         self._announce = announce
-        thread = self.ctx.backend.run(ui_backend.check_updates_task(), heavy=False)
-        thread.resultReady.connect(self._on_update_result)
+        self.header.set_checking(True, "Checking for updates…")
+        self._enable_update_buttons(False)
+        thread = self.ctx.backend.run(ui_backend.update_scan_task(), heavy=False)
+        thread.resultReady.connect(self._on_scan_result)
         thread.failed.connect(self._on_update_failed)
 
-    def _finish_check(self) -> None:
-        self._checking = False
-        self.header.update_btn.setEnabled(True)
-        self.settings_page.update_btn.setEnabled(True)
+    def _enable_update_buttons(self, on: bool) -> None:
+        self.header.update_btn.setEnabled(on)
+        self.settings_page.update_btn.setEnabled(on)
 
     def _on_update_failed(self, message: str) -> None:
-        self._finish_check()
+        self._checking = False
+        self._enable_update_buttons(True)
         self.header.set_checking(False, "Couldn't check for updates")
         self.header.set_version_tone("warn")
+        logger.log_error(f"Update check failed: {message}")
 
-    def _on_update_result(self, result) -> None:
-        """v0.19.0 (Checklist item 60b): the result also says whether a newer
-        Mud Music Manager is published; that comes first in the header and,
-        on Check For Updates, in its own dialog before the libraries'."""
-        self._finish_check()
-        statuses, app = result["libraries"], result["app"]
-        self._dep_statuses = statuses
-        self._app_update = app
-        outdated = [s for s in statuses if s.outdated]
-        unknown = [s for s in statuses if s.check_error and not s.outdated]
-        if dependency_checker.BUNDLED:  # v0.19.1: a packaged build has no separate libraries
-            msg = dependency_checker.BUNDLED_NOTE
-            tone = "ok"
-        elif outdated:
-            msg = f"{len(outdated)} library update{'s' if len(outdated) != 1 else ''} available"
-            tone = "warn"
-        elif unknown and len(unknown) == len(statuses):
-            msg = "Couldn't reach PyPI — libraries not verified"
-            tone = "neutral"
-        else:
-            msg = "Required libraries are up to date"
-            tone = "ok"
-        if app.outdated:
-            msg = app.summary() + (f" · {msg[0].lower()}{msg[1:]}" if outdated else "")
-            tone = "warn"
-        self.header.set_checking(False, msg)
-        self.header.set_version_tone(tone)
-        self.header.version_pill.setToolTip(app.summary())
-        self.settings_page.set_update_message(msg)
-        if not self._announce:
+    def _on_scan_result(self, report) -> None:
+        self._report = report
+        self._app_update = report.app
+        self._checking = False
+        self._enable_update_buttons(True)
+        view = self._show_update_view()
+        if self._announce and not view.out_of_date:  # as before: say it's all current
+            ui_dialogs.info(self, "Check For Updates", "Mud Music Manager is up to date."
+                            if view.message == "Up to date" else f"{view.message}.")
+
+    def _show_update_view(self):
+        """The header and Settings → Updates: message, pill and Update &
+        Restart MMM, from the last check."""
+        view = update_scan.summary(self._report, preparing=self._preparing)
+        self.header.set_checking(self._preparing, view.message)
+        self.header.set_version_tone(view.tone)
+        self.header.version_pill.setToolTip(f"{view.message} — click for details")
+        self.header.set_restart_shown(view.restart_ready or self._preparing)
+        self.settings_page.set_update_state(view.message, view.restart_ready or self._preparing)
+        return view
+
+    def _set_update_progress(self, fraction) -> None:
+        for box in (self.header.restart_box, self.settings_page.restart_box):
+            box.set_progress(fraction)
+            box.button.setEnabled(True)  # during a download it is the Cancel button
+            box.button.setText("Cancel" if (fraction is not None and fraction < 1.0) else "Update && Restart MMM")
+
+    def show_update_details(self) -> None:
+        """The version pill: what the last check found."""
+        if self._report is None:
+            ui_dialogs.info(self, "Updates", "Still checking for updates; try again in a moment.")
             return
-        if app.outdated:
-            dlg = ui_dialogs.AppUpdateDialog(self, app)
-            dlg.exec()
-            if getattr(dlg, "choice", None) == "update":  # v0.21.0: Update now (installed app)
-                self._start_app_update(app)
-                return
-        if outdated:
-            dlg = ui_dialogs.UpdatesDialog(self, outdated)
-            if dlg.exec() == dlg.Accepted:
-                self._install_updates(statuses)
-        elif not app.outdated:
-            ui_dialogs.info(self, "Check For Updates", f"{app.summary()}.\n{msg}.")
+        view = update_scan.summary(self._report, preparing=self._preparing)
+        app = self._report.app
+        dlg = ui_dialogs.UpdateDetailsDialog(
+            self, update_scan.details_markdown(self._report), view.restart_ready,
+            page_url=app.page_url if app.outdated and not app.can_self_update() else "")
+        dlg.exec()
+        if dlg.choice == "restart":
+            self.update_and_restart()
 
-    # -- one-click app update (v0.21.0, Checklist item 60e) ---------------------
-    def _start_app_update(self, status) -> None:
-        """Update now: download and check the installer on a background
-        thread (UpdateDownloadDialog shows it), then start it and close the
-        app; the installer reopens it. Not while a Sync / Scan / check runs,
-        and the Edit page's unsaved changes are dealt with first."""
+    def update_and_restart(self) -> None:
+        """Update & Restart MMM: download the newer release (installer or
+        portable .zip, checked against its fingerprints) with the thin bar
+        under the button following it, then install it and reopen the app.
+        While it downloads the button is Cancel."""
+        if self._preparing:  # the button reads Cancel now
+            self._update_cancel["stop"] = True
+            return
+        if self._report is None or self._checking or not self._report.app.can_self_update():
+            return
         if self.ctx.backend.heavy_running:
-            ui_dialogs.warn(self, "Update after this finishes",
-                            "A Sync, Scan or file check is running. Let it finish (or cancel it), then choose "
-                            "Check For Updates → Update now.")
+            ui_dialogs.warn(self, "Update after this finishes", "Finish or cancel the running Sync, Scan or check first.")
             return
         if self.stack.currentIndex() == PAGE_EDIT and not self.edit_page.confirm_leave():
             return
-        cancel = {"stop": False}
-        dlg = ui_dialogs.UpdateDownloadDialog(self, status, on_cancel=lambda: cancel.__setitem__("stop", True))
-        thread = self.ctx.backend.run(ui_backend.download_update_task(status, cancel), heavy=False)
-        thread.progress.connect(dlg.on_progress_text)
-        thread.resultReady.connect(lambda path: self._run_downloaded_installer(dlg, path))
-        thread.failed.connect(dlg.failed)
-        dlg.exec()
+        self._preparing = True
+        self._update_cancel = {"stop": False}
+        self._enable_update_buttons(False)
+        self._show_update_view()
+        self._set_update_progress(0.0)
+        thread = self.ctx.backend.run(ui_backend.download_update_task(self._report.app, self._update_cancel),
+                                      heavy=False)
+        thread.progress.connect(self._on_update_progress)
+        thread.resultReady.connect(self._on_update_downloaded)
+        thread.failed.connect(self._on_update_download_failed)
 
-    def _run_downloaded_installer(self, dlg, path: str) -> None:
-        dlg.starting_installer()
+    def _on_update_progress(self, text: str) -> None:
+        """'done/total' bytes from the download thread."""
         try:
-            app_update.launch_installer(path)
-        except app_update.UpdateError as e:
-            dlg.failed(str(e))
+            done, total = (int(x) for x in text.split("/"))
+        except ValueError:
             return
-        # Give the message a moment on screen, then close the app for the installer.
-        QTimer.singleShot(1200, lambda: (dlg.done(0), self.close(), QApplication.instance().quit()))
+        if total:
+            self._set_update_progress(min(done / total, 0.99))
 
-    def _install_updates(self, statuses) -> None:
-        busy = ui_dialogs.BusyDialog(self, "Updating libraries", "Installing the newer versions…")
-        relay = _UpdateRelay(busy, self)
-        thread = self.ctx.backend.run(ui_backend.install_updates_task(statuses))
-        thread.resultReady.connect(relay.on_result)
-        thread.failed.connect(relay.on_failed)
-        busy.open()
+    def _on_update_download_failed(self, message: str) -> None:
+        self._preparing = False
+        self._enable_update_buttons(True)
+        self._set_update_progress(None)
+        self._show_update_view()
+        if message.startswith("UpdateError: "):  # TaskThread prefixes the exception's type
+            message = message[len("UpdateError: "):]
+        if not self._update_cancel.get("stop"):
+            ui_dialogs.warn(self, "Couldn't update", message)
+
+    def _on_update_downloaded(self, path: str) -> None:
+        self._set_update_progress(1.0)  # done: the bar stays full as the app closes
+        self.header.set_checking(False, "Installing the update…")
+        try:
+            app_update.launch_update(path)
+        except app_update.UpdateError as e:
+            self._on_update_download_failed(str(e))
+            return
+        # the installer / the portable swap reopens the app; close it now
+        QTimer.singleShot(800, lambda: (self.close(), QApplication.instance().quit()))
 
     # -- shared-file reload ---------------------------------------------------
     def changeEvent(self, e):
@@ -801,30 +832,6 @@ class MainWindow(QMainWindow):
         ui_debug.close_debug()
         self.ctx.backend.shutdown()
         super().closeEvent(e)
-
-
-class _UpdateRelay(QObject):
-    def __init__(self, busy, window):
-        super().__init__(busy)
-        self._busy, self._window = busy, window
-
-    def on_result(self, result):
-        self._busy.finish()
-        text = "\n".join(result.get("lines", [])) or "Done."
-        ui_dialogs.TextViewerDialog(
-            self._window, "Library update", text + "\n\nRestart Mud Music Manager for these updates to take effect.").exec()
-        outdated = [s for s in result["statuses"] if s.outdated]
-        msg = "Required libraries are up to date" if not outdated else f"{len(outdated)} library update(s) still pending"
-        app = getattr(self._window, "_app_update", None)
-        if app is not None and app.outdated:  # v0.19.0: the newer app version stays first
-            msg = app.summary() + (f" · {msg[0].lower()}{msg[1:]}" if outdated else "")
-        self._window.header.set_checking(False, msg)
-        self._window.header.set_version_tone("ok" if not outdated and not (app and app.outdated) else "warn")
-        self._window.settings_page.set_update_message(msg)
-
-    def on_failed(self, message):
-        self._busy.finish()
-        ui_dialogs.warn(self._window, "Couldn't update", message)
 
 
 # ---------------------------------------------------------------------------

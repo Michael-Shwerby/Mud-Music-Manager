@@ -85,6 +85,7 @@ group; the Download Settings page's three are one group, Download
 Settings. Both have icons (ui_widgets.GroupIcon 'other', 'download').
 """
 
+import html
 import os
 
 from PySide6.QtCore import QPoint, QStandardPaths, Qt, QTime, QTimer, QUrl, Signal
@@ -109,8 +110,8 @@ import ui_theme
 import user_data
 import youtube_cookies
 from ui_widgets import (
-    AppLogo, CapsLabel, ElidedLabel, GlyphButton, GroupIcon, SegmentedControl, make_button, make_panel,
-    smooth_scroll,
+    AppLogo, CapsLabel, ElidedLabel, GlyphButton, GroupIcon, SegmentedControl, UpdateRestartBox, make_button,
+    make_panel, smooth_scroll,
 )
 
 
@@ -125,6 +126,8 @@ class SettingsPage(QWidget):
     closeRequested = Signal()
     themeChanged = Signal(str)
     checkUpdatesRequested = Signal()
+    restartRequested = Signal()      # v0.28.0: Update & Restart MMM
+    updateInfoRequested = Signal()   # v0.28.0: the Details link (what the check found)
 
     # v0.23.0: a larger sheet than the results pages' two-thirds (ui_widgets.OverlayHost)
     OVERLAY_SIZE_FRACTION = 0.86
@@ -352,8 +355,11 @@ class SettingsPage(QWidget):
         ucol = QVBoxLayout()
         ucol.setSpacing(2)
         ucol.addWidget(CapsLabel("Updates", muted=True))
-        self.update_label = QLabel("Check for a newer Mud Music Manager and whether the project’s libraries "
-                                   "are up to date.")  # v0.19.0: the app too
+        # v0.19.0: the app too; v0.28.0: a release carries the newest of everything
+        self.update_label = QLabel("Check for a newer Mud Music Manager. Each release includes the newest "
+                                   "Python, libraries, Deno and FFmpeg.")
+        self.update_label.setTextFormat(Qt.RichText)  # v0.28.0: the Details link
+        self.update_label.linkActivated.connect(lambda _href: self.updateInfoRequested.emit())
         self.update_label.setWordWrap(True)
         self.update_label.setProperty("role", "muted")
         ucol.addWidget(self.update_label)
@@ -374,8 +380,15 @@ class SettingsPage(QWidget):
         self.update_btn = make_button("Check For Updates")
         self.update_btn.clicked.connect(self.checkUpdatesRequested.emit)
         ubtns.addWidget(self.update_btn)
+        # v0.28.0 (Checklist item 60h): Update & Restart MMM under it when there are
+        # updates, with its note and progress bar (the same as the header's)
+        self.restart_box = UpdateRestartBox()
+        self.restart_btn = self.restart_box.button
+        self.restart_btn.clicked.connect(self.restartRequested.emit)
+        self.restart_box.hide()
+        ubtns.addWidget(self.restart_box)
         self.builtin_btn = make_button("Use built-in versions", "ghost", compact=True)
-        self.builtin_btn.setToolTip("Stop using the updated yt-dlp / Deno / FFmpeg and go back to the ones this "
+        self.builtin_btn.setToolTip("Stop using the updated libraries / Deno / FFmpeg and go back to the ones this "
                                     "version came with (from the next launch)")
         self.builtin_btn.clicked.connect(self._use_builtin_components)
         ubtns.addWidget(self.builtin_btn)
@@ -1055,8 +1068,12 @@ class SettingsPage(QWidget):
         self._sync_schedule_controls()  # v0.25.0
         self._sync_debug_button()
 
-    def set_update_message(self, text: str) -> None:
-        self.update_label.setText(text)
+    def set_update_state(self, text: str, restart: bool) -> None:
+        """v0.28.0: the update check's line and Update & Restart MMM (the
+        same as the header shows; the version pill there opens the details)."""
+        link = ui_theme.palette().link
+        self.update_label.setText(f'{html.escape(text)} &nbsp;<a href="details" style="color:{link}">Details</a>')
+        self.restart_box.setVisible(restart)
 
     # ---- Components and Project libraries, read in the background (v0.23.1) -------
     # Reading them took ~0.6 s on the GUI thread every time Settings opened
@@ -1151,7 +1168,7 @@ class SettingsPage(QWidget):
 
     def _use_builtin_components(self) -> None:
         label = self.builtin_btn.text()
-        which = ("the yt-dlp, Deno and FFmpeg versions this copy of Mud Music Manager came with"
+        which = ("the library, Deno and FFmpeg versions this copy of Mud Music Manager came with"
                  if app_paths.FROZEN else "the Deno and FFmpeg installed on this PC")
         if not ui_dialogs.ask_yes_no(
                 self.window(), label,

@@ -150,7 +150,11 @@ class MainPageKeysMixin:
         items = []
         header = getattr(self.window(), "header", None)
         if header is not None:
-            items += [header.update_btn, header.cmd_btn, header.gear_btn]
+            items += [header.update_btn]
+            # v0.28.0: the version pill (opens the update details) and Update &
+            # Restart MMM, when shown
+            items += [w for w in (header.version_pill, header.restart_btn) if w.isVisible()]
+            items += [header.cmd_btn, header.gear_btn]
         items += [self.add_btn, self.search, self.expand_all_btn, self.collapse_all_btn]
         out = [(("w", w), w) for w in items]
         for key, row in self._rows.items():
