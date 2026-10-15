@@ -15,6 +15,7 @@ year, cover art, lyrics). This project was made possible with Claude Code.
 
 * [INSTALLATION](#installation)
     * [Release Files](#release-files)
+    * [Updating](#updating)
     * [Running from source](#running-from-source)
 * [USAGE](#usage)
 * [DOWNLOAD CONFIGURATION](#download-configuration)
@@ -28,7 +29,7 @@ year, cover art, lyrics). This project was made possible with Claude Code.
 
 # INSTALLATION
 
-[![Windows x64](https://img.shields.io/badge/-Windows_x64-blue.svg?style=for-the-badge&logo=windows)](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/download/v0.27.0/MudMusicManager-Setup-0.27.0.exe "Download the Windows installer")
+[![Windows x64](https://img.shields.io/badge/-Windows_x64-blue.svg?style=for-the-badge&logo=windows)](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest/download/MudMusicManager-Setup.exe "Download the latest Windows installer")
 [![MacOS](https://img.shields.io/badge/-MacOS_(planned)-lightgrey.svg?style=for-the-badge&logo=apple)](#roadmap "On the roadmap")
 [![Linux](https://img.shields.io/badge/-Linux_(planned)-lightgrey.svg?style=for-the-badge&logo=linux)](#roadmap "On the roadmap")
 [![All versions](https://img.shields.io/badge/-All_Versions-lightgrey.svg?style=for-the-badge)](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases "All releases")
@@ -38,7 +39,8 @@ year, cover art, lyrics). This project was made possible with Claude Code.
 > **Linux** is planned for a future release; see the [ROADMAP](#roadmap) for upcoming platforms and features.
 
 Download the installer or the portable `.zip` from the [latest release](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest).
-Both include everything the app needs (Python, FFmpeg and Deno are bundled), so nothing else has to be installed.
+Both include everything the app needs (Python, every library, FFmpeg and Deno are bundled), so nothing else has to
+be installed.
 
 ## RELEASE FILES
 
@@ -46,32 +48,46 @@ Both include everything the app needs (Python, FFmpeg and Deno are bundled), so 
 
 File|Platform|Description
 :---|:---|:---
-[MudMusicManager-Setup-&lt;version&gt;.exe](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest)|Windows x64|Installer (recommended for **Windows**). Adds a Start-menu shortcut, an optional desktop shortcut and an uninstaller
+[MudMusicManager-Setup.exe](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest/download/MudMusicManager-Setup.exe)|Windows x64|Installer (recommended for **Windows**). Adds a Start-menu shortcut, an optional desktop shortcut and an uninstaller
 
 #### Alternatives
 
 File|Platform|Description
 :---|:---|:---
-[MudMusicManager-Portable-&lt;version&gt;.zip](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest)|Windows x64|Portable version: unzip anywhere (e.g. a USB drive) and run, no installation. Keeps all its data in its own folder
+[MudMusicManager-Portable.zip](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest/download/MudMusicManager-Portable.zip)|Windows x64|Portable version: unzip anywhere (e.g. a USB drive) and run, no installation. Keeps all its data in its own folder
 
 #### Misc
 
 File|Description
 :---|:---
-[SHA256SUMS.txt](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest)|SHA-256 fingerprints of the release files, to check a download is complete and unchanged
+[SHA256SUMS.txt](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest/download/SHA256SUMS.txt)|SHA-256 fingerprints of the release files, to check a download is complete and unchanged
+MudMusicManager-Setup-&lt;version&gt;.exe / MudMusicManager-Portable-&lt;version&gt;.zip|The same files with the version in their name (the app's own updater uses these)
+bundled_versions.json / bundled_libraries.json|The versions of Python, yt-dlp, Deno, FFmpeg and every library in this release
 
 > [!NOTE]
 > The app isn't code-signed yet, so Windows SmartScreen may show "Windows protected your PC" the first time.
 > Choose **More info → Run anyway** to continue.
 
+## UPDATING
+
+Mud Music Manager checks for a new version every time it starts. When one is out, **Update & Restart MMM** appears
+at the top of the window: it downloads the new version, installs it and reopens the app (the installer and the
+portable version both update themselves). Your playlists, settings and music stay as they are. Click the version
+number at the top to see what's new.
+
+New versions are published automatically whenever the parts Mud Music Manager relies on get updates (yt-dlp is
+checked daily, everything else weekly), so downloads keep working when YouTube and the other sites change.
+
 ## RUNNING FROM SOURCE
 
 - Python 3 (developed and tested on Python 3.14, on Windows)
-- The libraries in `requirements.txt`: `pip install -r requirements.txt`
-- [FFmpeg](https://ffmpeg.org) on your PATH
+- The libraries in `requirements.txt`: `pip install -r requirements.txt` (if any are missing, the app offers to
+  install them when it starts, e.g. after you move to a new Python version)
+- [FFmpeg](https://ffmpeg.org) and [Deno](https://deno.com) on your PATH (Deno lets yt-dlp handle YouTube's
+  checks; without it many YouTube downloads fail)
 
 Then double-click `Mud Music Manager.pyw`, or run `python main.py` (graphical app).
-`python main.py --cli` opens the terminal menu.
+`python main.py --cli` opens the terminal menu. A copy run from source is updated with `git pull`.
 
 
 # USAGE
@@ -91,11 +107,11 @@ Bug reports, ideas and code are all welcome. A few good practices keep things ea
 ## Reporting a bug
 
 1. **Check it isn't already reported.** Search the [open and closed issues](https://github.com/Michael-Shwerby/Mud-Music-Manager/issues?q=is%3Aissue) first.
-2. **Use the latest version.** Use **Check For Updates** in the app; the bug may already be fixed.
+2. **Use the latest version.** Press **Check For Updates** in the app (or see [Updating](#updating)); the bug may already be fixed.
 3. **Open one issue per bug**, with a short, specific title (e.g. *"SoundCloud playlist sync skips the last track"*, not *"sync broken"*).
 4. **Include:**
-    * the Mud Music Manager version (shown in Settings) and how you installed it (installer, portable or source);
-    * your OS Version;
+    * the Mud Music Manager version (shown at the top of the window) and how you installed it (installer, portable or source);
+    * your Windows version;
     * the platform the playlist is on (Spotify, YouTube, …) and, if it's public, a link to it;
     * the steps to reproduce it, what you expected, and what happened instead;
     * the relevant part of the log (from the `logs` folder) or a screenshot of the error.
@@ -150,8 +166,8 @@ YouTube, SoundCloud, Apple or Amazon.
 ## Support the project
 
 Mud Music Manager is free. If it's useful to you, you can support its
-development through Ko-Fi, click the **Sponsor** button at the top of this
-repository's GitHub page, or you can go there directly here: https://ko-fi.com/michaelshwerby
+development through Ko-fi: click the **Sponsor** button at the top of this
+repository's GitHub page, or go there directly: https://ko-fi.com/michaelshwerby
 
 ## License
 

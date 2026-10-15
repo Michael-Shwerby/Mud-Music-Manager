@@ -13,7 +13,8 @@
 # version number and its RELEASE_NOTES.md entry to main, tags it and
 # (only if the build really carries something new - a library another one
 # holds back leaves it unchanged, and then nothing is published)
-# publishes the release with the files the app's update needs. Installed and
+# publishes the release with the files the app's update needs (plus
+# version-free copies for the README's download buttons). Installed and
 # portable copies then offer it through Update & Restart MMM.
 #
 # Run it by hand: Actions tab -> "Automatic release" -> Run workflow
@@ -137,7 +138,12 @@ jobs:
           git tag "v$env:VERSION"
           git push origin HEAD:main "v$env:VERSION"
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          # version-free copies: the README's download buttons link to
+          # releases/latest/download/MudMusicManager-Setup.exe (always the newest)
+          Copy-Item "release/MudMusicManager-Setup-$env:VERSION.exe" release/MudMusicManager-Setup.exe
+          Copy-Item "release/MudMusicManager-Portable-$env:VERSION.zip" release/MudMusicManager-Portable.zip
           gh release create "v$env:VERSION" --title "Mud Music Manager v$env:VERSION" --notes-file release/NOTES.md `
             "release/MudMusicManager-Setup-$env:VERSION.exe" "release/MudMusicManager-Portable-$env:VERSION.zip" `
+            release/MudMusicManager-Setup.exe release/MudMusicManager-Portable.zip `
             release/SHA256SUMS.txt release/bundled_versions.json release/bundled_libraries.json
           if ($LASTEXITCODE -ne 0) { exit 1 }
