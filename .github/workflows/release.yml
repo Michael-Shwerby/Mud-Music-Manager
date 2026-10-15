@@ -4,12 +4,15 @@
 # whether a release is due (packaging/release_check.py check):
 #   - daily:   yt-dlp has a newer stable release (YouTube fixes land there), or
 #              app_info.VERSION on main is newer than the latest release;
-#   - Mondays: also FFmpeg, a new Deno x.y line, a Python patch on the same
-#              3.x line, or a library in requirements.txt has a newer version.
+#   - Mondays: also every other library and tool (Michael, 2026-10-15): any of
+#              the ~35 libraries in the build, Deno, FFmpeg, or a Python patch on
+#              the same 3.x line has a newer version.
 # If one is due it builds the installer and portable .zip on Windows with
 # packaging/build.ps1 (newest libraries, Deno, FFmpeg; self-test without the
 # test download - YouTube often blocks GitHub's machines), commits the new
 # version number and its RELEASE_NOTES.md entry to main, tags it and
+# (only if the build really carries something new - a library another one
+# holds back leaves it unchanged, and then nothing is published)
 # publishes the release with the files the app's update needs. Installed and
 # portable copies then offer it through Update & Restart MMM.
 #
@@ -96,13 +99,23 @@ jobs:
           powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -NoDownload
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Anything new in this build?
+        id: changed
+        env:
+          RELEASE_REASON: ${{ needs.check.outputs.reason }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          pip install requests packaging
+          python packaging/release_check.py changed $env:VERSION "dist/Mud Music Manager/_internal/bundled_versions.json" "dist/Mud Music Manager/_internal/bundled_libraries.json"
+
       - name: Release notes
+        if: steps.changed.outputs.changed == 'true'
         run: |
           python packaging/release_check.py notes $env:VERSION "dist/Mud Music Manager/_internal/bundled_versions.json" release/NOTES.md
           Copy-Item "dist/Mud Music Manager/_internal/bundled_versions.json", "dist/Mud Music Manager/_internal/bundled_libraries.json" release/
 
       - name: Keep the files (test run)
-        if: env.PUBLISH != 'true'
+        if: env.PUBLISH != 'true' && steps.changed.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: MudMusicManager-${{ env.VERSION }}
@@ -110,7 +123,7 @@ jobs:
           retention-days: 7
 
       - name: Publish
-        if: env.PUBLISH == 'true'
+        if: env.PUBLISH == 'true' && steps.changed.outputs.changed == 'true'
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"

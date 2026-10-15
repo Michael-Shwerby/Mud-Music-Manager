@@ -15,14 +15,23 @@ reaches users without anyone building by hand.
                            app_info.VERSION on main is newer than the latest
                            release (a version Michael pushed);
                            the latest release has no bundled_versions.json;
-        --weekly           also: FFmpeg newer; Deno in a newer x.y line;
-                           Python newer on its 3.x line; a library listed in
-                           requirements.txt newer.
+        --weekly           also (Michael, 2026-10-15: every library and tool,
+                           every week): FFmpeg or Deno newer; Python newer on
+                           its 3.x line; ANY library in the build (all ~35 in
+                           bundled_libraries.json, not only requirements.txt)
+                           newer on PyPI.
       Writes build=true/false, version=X.Y.Z and reason=... to
       $GITHUB_OUTPUT (and prints them).
 
   python packaging/release_check.py set-version X.Y.Z
       Writes the version into app_info.py (before the build).
+
+  python packaging/release_check.py changed X.Y.Z <new bundled_versions.json> <new bundled_libraries.json>
+      After the build: did anything the build carries actually change since
+      the latest release? Writes changed=true/false to $GITHUB_OUTPUT. A newer
+      library that another one won't let in leaves the build unchanged; then
+      nothing is published (else the same release would go out every week).
+      Always true for a version Michael pushed or a build asked for by hand.
 
   python packaging/release_check.py notes X.Y.Z <new bundled_versions.json> <notes.md>
       After the build: writes the release's notes (what changed, from the
@@ -161,18 +170,28 @@ def decide(weekly: bool, force: bool) -> Tuple[bool, str, str]:
         if tools.get("ffmpeg") and _v(old.get("ffmpeg")) and _v(tools["ffmpeg"]) > _v(old["ffmpeg"]):
             reasons.append(f"FFmpeg {old['ffmpeg']} -> {tools['ffmpeg']}")
         nd, od = _v(tools.get("deno")), _v(old.get("deno"))
-        if nd and od and nd.release[:2] > od.release[:2]:
+        if nd and od and nd > od:
             reasons.append(f"Deno {old['deno']} -> {tools['deno']}")
         if old.get("python"):
             py = python_latest_patch(old["python"])
             if py and py > _v(old["python"]):
                 reasons.append(f"Python {old['python']} -> {py}")
         libs = (release_asset_json(release, "bundled_libraries.json") or {}).get("libraries") or {}
-        for name in requirement_names():
-            have = _v((libs.get(_norm(name)) or {}).get("version"))
-            new = pypi_latest(name) if have else None
-            if have and new and new > have and _norm(name) != "yt-dlp":
-                reasons.append(f"{name} {have} -> {new}")
+        names = {k: lib.get("name") or k for k, lib in libs.items()} or {_norm(n): n for n in requirement_names()}
+        from concurrent.futures import ThreadPoolExecutor
+
+        def newer(key):
+            have = _v((libs.get(key) or {}).get("version"))
+            try:
+                new = pypi_latest(names[key]) if have else None
+            except requests.RequestException:
+                return None
+            return (names[key], have, new) if have and new and new > have else None
+
+        with ThreadPoolExecutor(8) as pool:
+            for hit in pool.map(newer, sorted(k for k in names if k != "yt-dlp")):
+                if hit:
+                    reasons.append(f"{hit[0]} {hit[1]} -> {hit[2]}")
     if reasons:
         return True, version, "; ".join(reasons)
     if force:
@@ -203,6 +222,31 @@ def cmd_set_version(version: str) -> int:
     text = re.sub(r'^VERSION = "[0-9.]+"', f'VERSION = "{version}"', text, count=1, flags=re.M)
     open(path, "w", encoding="utf-8", newline="").write(text)
     print(f"app_info.VERSION = {version}")
+    return 0
+
+
+def cmd_changed(version: str, new_versions: str, new_libraries: str) -> int:
+    release = latest_release()
+    released = _v((release or {}).get("tag_name"))
+    with open(new_versions, encoding="utf-8-sig") as f:
+        nv = json.load(f)
+    with open(new_libraries, encoding="utf-8-sig") as f:
+        nl = (json.load(f).get("libraries") or {})
+    ov = release_asset_json(release, "bundled_versions.json") or {}
+    ol = (release_asset_json(release, "bundled_libraries.json") or {}).get("libraries") or {}
+    diffs = [f"{k} {ov.get(k)} -> {v}" for k, v in nv.items() if str(ov.get(k)) != str(v)]
+    diffs += [f"{lib.get('name', k)} {(ol.get(k) or {}).get('version')} -> {lib.get('version')}"
+              for k, lib in nl.items() if (ol.get(k) or {}).get("version") != lib.get("version")]
+    # a version Michael pushed is always published (the check job's reason says so;
+    # set-version has already written `version` into app_info.py, so it can't tell)
+    pushed = released is None or os.environ.get("RELEASE_REASON", "").endswith("is on main and not released yet")
+    changed = bool(diffs) or pushed or os.environ.get("FORCE") == "true" or not ov
+    lines = [f"changed={'true' if changed else 'false'}"]
+    print(lines[0] + ("" if not diffs else "  (" + "; ".join(diffs[:20]) + ")"))
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
     return 0
 
 
@@ -249,6 +293,8 @@ def main(argv: List[str]) -> int:
         return cmd_check(argv[1:])
     if argv[0] == "set-version" and len(argv) == 2:
         return cmd_set_version(argv[1])
+    if argv[0] == "changed" and len(argv) == 4:
+        return cmd_changed(argv[1], argv[2], argv[3])
     if argv[0] == "notes" and len(argv) == 4:
         return cmd_notes(argv[1], argv[2], argv[3])
     print(__doc__)
