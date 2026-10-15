@@ -11,7 +11,7 @@
 Mud Music Manager is a desktop app that keeps a local music folder in sync with a playlist or album on
 **Spotify, YouTube, YT Music, SoundCloud, Apple Music or Amazon Music**: new songs are added, removed songs
 are taken out, track numbers follow the playlist's order, and every file is tagged (title, artist, album,
-year, cover art, lyrics). 
+year, cover art, lyrics). This project was made possible with Claude Code.
 
 * [INSTALLATION](#installation)
     * [Release Files](#release-files)
@@ -150,8 +150,8 @@ YouTube, SoundCloud, Apple or Amazon.
 ## Support the project
 
 Mud Music Manager is free. If it's useful to you, you can support its
-development with a donation: use the **Sponsor** button at the top of this
-repository's GitHub page or go to this Ko-Fi page directly (https://ko-fi.com/michaelshwerby)
+development through Ko-Fi, click the **Sponsor** button at the top of this
+repository's GitHub page, or you can go there directly here: https://ko-fi.com/michaelshwerby
 
 ## License
 
