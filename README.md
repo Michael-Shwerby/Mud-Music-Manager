@@ -151,7 +151,7 @@ YouTube, SoundCloud, Apple or Amazon.
 
 Mud Music Manager is free. If it's useful to you, you can support its
 development with a donation: use the **Sponsor** button at the top of this
-repository's GitHub page.
+repository's GitHub page or go to this Ko-Fi page directly (https://ko-fi.com/michaelshwerby)
 
 ## License
 
