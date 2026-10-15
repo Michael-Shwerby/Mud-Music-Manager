@@ -60,7 +60,7 @@ File|Description
 :---|:---
 [SHA256SUMS.txt](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest)|SHA-256 fingerprints of the release files, to check a download is complete and unchanged
 
-> [!TIP]
+> [!NOTE]
 > The app isn't code-signed yet, so Windows SmartScreen may show "Windows protected your PC" the first time.
 > Choose **More info → Run anyway** to continue.
 
