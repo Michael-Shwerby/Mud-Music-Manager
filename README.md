@@ -13,7 +13,7 @@ Mud Music Manager is a desktop app that keeps a local music folder in sync with 
 are taken out, track numbers follow the playlist's order, and every file is tagged (title, artist, album,
 year, cover art, lyrics). This project was made possible with Claude Code.
 
-For more information about the application and how it works, please see the Usage Section below.
+For more information about the application and how it works, please see the [USAGE](#usage) Section below.
 
 * [INSTALLATION](#installation)
     * [Release Files](#release-files)
@@ -95,12 +95,38 @@ Then double-click `Mud Music Manager.pyw`, or run `python main.py` (graphical ap
 # USAGE
 
 <!-- Guides and diagrams coming soon. -->
-N/A
+Mud Music Manager (or MMM) is an application designed to be able to download your favorite playlists & albums easily.
+The application roughly goes through these steps in order to do so. First, MMM pulls online data from the provided public playlist link (The playlist MUST be public). Then that data is routed through YouTube Music in order to download the content from YouTube, in the desired file format & configuration. 
+
+<!-- Data Routing Diagram: Platforms > YT Music > YouTube > Files -->
+
+Here is a general breakdown of each page in the application:
+
+### 1 Main Menu
+F
+
+### 2 Edit Page
+F
+
+### 3 Settings Window
+F
 
 # DOWNLOAD CONFIGURATION
 
-<!-- Screenshot and explanation of the download settings coming soon. -->
-N/A
+These are the current settings available to configure for file downloads. 
+
+<!-- Screenshot of download settings -->
+
+The settings will not affect already downloaded music files; they only affect new downloads after they have been selected. These settings can be found by navigating to (Settings > Download Settings). 
+
+Additionally, some explicit results may only be obtained after using the YouTube Sign in Feature, which utilizes your own cookies for YouTube downloads.
+
+<!-- Prefer Explicit Version + YouTube Sign In Feature Screenshot -->
+
+Each song file is currently able to pull and retain these parameters from the playlist link: 
+title, artist, album, year, cover art, lyrics, & playlist track #
+
+
 
 # CONTRIBUTING
 
