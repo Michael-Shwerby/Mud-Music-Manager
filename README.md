@@ -13,6 +13,8 @@ Mud Music Manager is a desktop app that keeps a local music folder in sync with 
 are taken out, track numbers follow the playlist's order, and every file is tagged (title, artist, album,
 year, cover art, lyrics). This project was made possible with Claude Code.
 
+For more information about the application and how it works, please see the Usage Section below.
+
 * [INSTALLATION](#installation)
     * [Release Files](#release-files)
     * [Updating](#updating)
