@@ -60,7 +60,7 @@ File|Description
 :---|:---
 [SHA256SUMS.txt](https://github.com/Michael-Shwerby/Mud-Music-Manager/releases/latest)|SHA-256 fingerprints of the release files, to check a download is complete and unchanged
 
-> [!TIP]
+> [!NOTE]
 > The app isn't code-signed yet, so Windows SmartScreen may show "Windows protected your PC" the first time.
 > Choose **More info → Run anyway** to continue.
 
@@ -77,12 +77,12 @@ Then double-click `Mud Music Manager.pyw`, or run `python main.py` (graphical ap
 # USAGE
 
 <!-- Guides and diagrams coming soon. -->
-
+N/A
 
 # DOWNLOAD CONFIGURATION
 
 <!-- Screenshot and explanation of the download settings coming soon. -->
-
+N/A
 
 # CONTRIBUTING
 
@@ -133,7 +133,7 @@ Have an idea? See [Requesting a feature](#requesting-a-feature).
 
 # FAQ
 
-None yet...
+None yet
 
 
 ---
@@ -151,7 +151,7 @@ YouTube, SoundCloud, Apple or Amazon.
 
 Mud Music Manager is free. If it's useful to you, you can support its
 development with a donation: use the **Sponsor** button at the top of this
-repository's GitHub page.
+repository's GitHub page or go to this Ko-Fi page directly (https://ko-fi.com/michaelshwerby)
 
 ## License
 
