@@ -111,6 +111,13 @@ F
 ### 3 Settings Window
 F
 
+
+### Download Failures
+> [!NOTE]
+> The information in this section is from MY OWN PERSONAL ASSESSMENTS (Most of which have been tested on Spotify) and is not driven by literal data. I wish I had a bigger sample size to get more precise data.
+
+The application, as of writing this, has about a ~90-100% chance of successfully downloading all the songs within a playlist. Out of that ~10 percent of failures, ~6-8% are attributed to a random failure error that just requires the playlist to be synced again for them to be acquired. And the remaining ~0-4% are completely unavailable and require manual exception fixes. Some songs just may not have a YouTube counterpart, or it may be unclear for Mud Music Manager to decipher where that same song could be sourced from.
+
 # DOWNLOAD CONFIGURATION
 
 These are the current settings available to configure for file downloads. 
